@@ -1,0 +1,78 @@
+# PQC Compliance Checks Configuration
+
+# Define which validation checks are enabled
+checks:
+  cryptography:
+    enabled: true
+    description: "Cryptographic library validation"
+    checks:
+      - check_openssl_version
+      - check_libcrypto_algorithms
+      - check_openssl_fips
+      - check_libgcrypt
+      - check_libnss_windows_cng
+
+  certificates:
+    enabled: true
+    description: "Certificate store validation"
+    checks:
+      - check_ca_bundle_location
+      - check_weak_certificates
+      - check_certificate_expiration
+
+  tls_configuration:
+    enabled: true
+    description: "TLS/SSL configuration validation"
+    checks:
+      - check_openssl_cipher_config
+      - check_schannel_protocols
+      - check_deprecated_protocols
+
+  system_algorithms:
+    enabled: true
+    description: "System-wide algorithm validation"
+    checks:
+      - check_ssh_algorithms
+      - check_system_entropy
+      - check_security_patches
+
+  compliance:
+    enabled: true
+    description: "Compliance-specific checks"
+    checks:
+      - check_fips_mode
+      - check_encryption_at_rest
+      - check_encryption_in_transit
+
+# Platform-specific configuration
+platforms:
+  linux:
+    enabled: true
+    desktop: true
+    server: true
+  
+  windows:
+    enabled: true
+    desktop: true
+    server: true
+  
+  macos:
+    enabled: true
+    desktop: true
+    server: false
+
+# Logging configuration
+logging:
+  level: "DEBUG"
+  structured_logging: true
+  log_to_file: true
+  log_to_console: true
+  retention_days: 90
+
+# Report configuration
+reporting:
+  generate_json: true
+  generate_html: true
+  generate_csv: true
+  include_raw_data: true
+  include_recommendations: true

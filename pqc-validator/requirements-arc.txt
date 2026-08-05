@@ -1,0 +1,19 @@
+# PQC Validator — Arc runtime dependencies only
+# Used by the CSE install scripts on Arc machines.
+# Excludes management-plane packages (azure-mgmt-*) that are only
+# needed by setup_azure.py and arc_orchestrator.py.
+
+PyYAML>=6.0
+pydantic>=2.0
+python-json-logger>=2.0.0
+
+# Identity (Arc Managed Identity / DefaultAzureCredential)
+azure-identity>=1.17.0
+
+# Azure Monitor Logs Ingestion API (stream to Log Analytics)
+azure-monitor-ingestion>=1.0.0
+
+requests>=2.28.0
+
+# Windows-specific checks (only installed on Windows)
+pywin32>=300; sys_platform == 'win32'

@@ -1,0 +1,47 @@
+# Python dependencies for PQC Validator
+
+# Core dependencies
+PyYAML>=6.0
+pydantic>=2.0
+
+# Logging and reporting
+python-json-logger>=2.0.0
+
+# ── Azure SDK ────────────────────────────────────────────────
+# Identity (Managed Identity / DefaultAzureCredential)
+azure-identity>=1.17.0
+
+# Azure Monitor Logs Ingestion API (stream to Log Analytics)
+azure-monitor-ingestion>=1.0.0
+
+# Azure Resource Graph (Arc machine inventory)
+azure-mgmt-resourcegraph>=8.0.0
+
+# Azure Arc / Hybrid Compute (Run Command dispatch)
+azure-mgmt-hybridcompute>=9.0.0
+
+# Azure Monitor (DCE / DCR management — setup_azure.py only)
+azure-mgmt-monitor>=6.0.0
+
+# Log Analytics Workspace management (setup_azure.py only)
+azure-mgmt-loganalytics>=13.0.0
+
+# Resource Group management (setup_azure.py only)
+azure-mgmt-resource>=23.0.0
+
+# Role assignments (setup_azure.py only)
+azure-mgmt-authorization>=4.0.0
+
+# ── Optional enhancements ────────────────────────────────────
+requests>=2.28.0
+tabulate>=0.9.0
+
+# Windows-specific checks (only installed on Windows)
+pywin32>=300; sys_platform == 'win32'
+
+# ── Development dependencies ─────────────────────────────────
+pytest>=7.0
+pytest-cov>=4.0
+black>=23.0
+flake8>=6.0
+mypy>=1.0

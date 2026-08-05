@@ -1,0 +1,392 @@
+// =============================================================================
+// PQC Compliance — Log Analytics KQL Queries
+//
+// Table  : PQCCompliance_CL  (Log Analytics Data Collector API — legacy custom log)
+//
+// Column reference  (Data Collector API appends _s to string fields)
+// ─────────────────────────────────────────────────────────────────────────────
+// TimeGenerated        datetime   auto-set on ingestion
+// record_type_s        string     scan_result | compliance_gap | error
+// hostname_s           string     Arc machine hostname
+// platform_s           string     Linux | Windows | Darwin
+// os_version_s         string     distro/build string
+// check_name_s         string     e.g. "OpenSSL Version Check"
+// category_s           string     crypto_library | crypto_algorithms |
+//                                 tls_configuration | certificates |
+//                                 ssh | system_security | encryption
+// status_s             string     COMPLIANT | DEPRECATED | NOT_FOUND |
+//                                 REQUIRES_UPDATE | UNKNOWN | ERROR
+// details_s            string     human-readable check output
+// algorithm_s          string     e.g. "OpenSSL"
+// version_s            string     detected version
+// gap_type_s           string     deprecated_openssl | no_pqc_algorithms |
+//                                 deprecated_protocols | weak_ciphers_available |
+//                                 deprecated_ssh_algorithms | fips_not_enabled |
+//                                 weak_root_certificates
+// severity_s           string     CRITICAL | HIGH | MEDIUM | LOW  (gaps only)
+// affected_component_s string     component name (gaps only)
+// recommendation_s     string     remediation guidance (gaps only)
+// priority_score_d     real       0.0–1.0 remediation priority (gaps only)
+// error_type_s         string     error category (errors only)
+// =============================================================================
+
+
+// ── 1. Fleet compliance score per machine (last 24 h) ────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| summarize
+    TotalChecks = count(),
+    Compliant   = countif(status_s == "COMPLIANT"),
+    Deprecated  = countif(status_s == "DEPRECATED"),
+    NeedsUpdate = countif(status_s == "REQUIRES_UPDATE"),
+    NotFound    = countif(status_s == "NOT_FOUND")
+  by hostname_s, platform_s, os_version_s
+| extend ComplianceScore = round(100.0 * Compliant / TotalChecks, 1)
+| order by ComplianceScore asc
+
+
+// ── 2. Active compliance gaps — fleet-wide (last 24 h) ───────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "compliance_gap"
+| summarize
+    MachineCount     = dcount(hostname_s),
+    MachinesAffected = make_set(hostname_s)
+  by gap_type_s, severity_s, affected_component_s, recommendation_s
+| order by
+    case(severity_s, "CRITICAL", 4, "HIGH", 3, "MEDIUM", 2, "LOW", 1, 0) desc,
+    MachineCount desc
+
+
+// ── 3. Machines with CRITICAL or HIGH gaps ───────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "compliance_gap"
+| where severity_s in ("CRITICAL", "HIGH")
+| summarize
+    CriticalGaps = countif(severity_s == "CRITICAL"),
+    HighGaps     = countif(severity_s == "HIGH"),
+    GapTypes     = make_set(gap_type_s)
+  by hostname_s, platform_s
+| order by CriticalGaps desc, HighGaps desc
+
+
+// ── 4. PQC algorithm coverage ────────────────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| where check_name_s == "libcrypto Algorithm Check"
+| project TimeGenerated, hostname_s, platform_s, os_version_s, status_s, details_s
+| order by status_s asc, hostname_s asc
+
+
+// ── 5. OpenSSL version distribution ─────────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| where check_name_s == "OpenSSL Version Check"
+| summarize
+    MachineCount = dcount(hostname_s),
+    Machines     = make_set(hostname_s)
+  by version_s, status_s
+| order by version_s desc
+
+
+// ── 6. TLS and SSH deprecation exposure ──────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| where category_s in ("tls_configuration", "ssh")
+| where status_s in ("DEPRECATED", "REQUIRES_UPDATE")
+| project TimeGenerated, hostname_s, platform_s, check_name_s, category_s, status_s, details_s
+| order by hostname_s asc, category_s asc
+
+
+// ── 7. Certificate store issues ──────────────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| where category_s == "certificates"
+| where status_s != "COMPLIANT"
+| project TimeGenerated, hostname_s, platform_s, check_name_s, status_s, details_s
+| order by status_s desc, hostname_s asc
+
+
+// ── 8. FIPS compliance status ────────────────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where check_name_s == "OpenSSL FIPS Module Check"
+    or gap_type_s == "fips_not_enabled"
+| project TimeGenerated, hostname_s, platform_s, record_type_s, check_name_s, gap_type_s, status_s, details_s
+| order by hostname_s asc
+
+
+// ── 9. Compliance gap trend over time ────────────────────────────────────────
+PQCCompliance_CL
+| where record_type_s == "compliance_gap"
+| where TimeGenerated > ago(30d)
+| summarize GapCount = count() by bin(TimeGenerated, 1d), severity_s
+| order by TimeGenerated asc
+
+
+// ── 10. Scan coverage — machines reporting in last 7 days ───────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(7d)
+| summarize
+    LastScan  = max(TimeGenerated),
+    ScanCount = dcount(bin(TimeGenerated, 1d))
+  by hostname_s, platform_s, os_version_s
+| order by LastScan desc
+
+
+// ── 11. Stale machines — no scan data in last 48 h ──────────────────────────
+PQCCompliance_CL
+| summarize LastScan = max(TimeGenerated) by hostname_s, platform_s
+| where LastScan < ago(48h)
+| order by LastScan asc
+
+
+// ── 12. Validator errors ─────────────────────────────────────────────────────
+PQCCompliance_CL
+| where record_type_s == "error"
+| where TimeGenerated > ago(7d)
+| summarize ErrorCount = count(), LastSeen = max(TimeGenerated)
+  by hostname_s, error_type_s, details_s
+| order by ErrorCount desc
+
+
+// ── 13. Executive dashboard — fleet-wide summary (last 24 h) ─────────────────
+let Checks = PQCCompliance_CL
+    | where TimeGenerated > ago(24h)
+    | where record_type_s == "scan_result"
+    | summarize
+        TotalChecks     = count(),
+        CompliantChecks = countif(status_s == "COMPLIANT"),
+        TotalMachines   = dcount(hostname_s);
+let Gaps = PQCCompliance_CL
+    | where TimeGenerated > ago(24h)
+    | where record_type_s == "compliance_gap"
+    | summarize
+        CriticalGaps = countif(severity_s == "CRITICAL"),
+        HighGaps     = countif(severity_s == "HIGH"),
+        TotalGaps    = count();
+Checks | cross join Gaps
+| project
+    TotalMachines,
+    TotalChecks,
+    CompliantChecks,
+    FleetScore   = round(100.0 * CompliantChecks / TotalChecks, 1),
+    TotalGaps,
+    CriticalGaps,
+    HighGaps
+
+
+// ── 14. Per-machine full check roster ────────────────────────────────────────
+// Replace <machine-hostname> before running
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where record_type_s == "scan_result"
+| where hostname_s == "<machine-hostname>"
+| project TimeGenerated, check_name_s, category_s, status_s, version_s, algorithm_s, details_s
+| order by category_s asc, check_name_s asc
+//
+// Column reference
+// ─────────────────────────────────────────────────────────────────────────────
+// TimeGenerated     datetime   auto-set on ingestion
+// RecordType        string     scan_result | compliance_gap | error
+// MachineName       string     Arc machine hostname
+// Platform          string     Linux | Windows | Darwin
+// OSVersion         string     distro/build string
+// CheckName         string     e.g. "OpenSSL Version Check"
+// Category          string     crypto_library | crypto_algorithms |
+//                              tls_configuration | certificates |
+//                              ssh | system_security | encryption
+// Status            string     COMPLIANT | DEPRECATED | NOT_FOUND |
+//                              REQUIRES_UPDATE | UNKNOWN | ERROR
+// Details           string     human-readable check output
+// Algorithm         string     algorithm name (scan_result only)
+// Version           string     detected version (scan_result only)
+// GapType           string     deprecated_openssl | no_pqc_algorithms |
+//                              deprecated_protocols | deprecated_ssh_algorithms |
+//                              fips_not_enabled | weak_ciphers_available |
+//                              weak_root_certificates
+// Severity          string     CRITICAL | HIGH | MEDIUM | LOW (gaps only)
+// AffectedComponent string     component name (gaps only)
+// Recommendation    string     remediation guidance (gaps only)
+// PriorityScore     real       0.0-1.0 remediation priority (gaps only)
+// RawRecord         string     full original JSON for audit
+// =============================================================================
+
+
+// ── 1. Fleet compliance score per machine (last 24 h) ────────────────────────
+// Pass rate per machine across all check types.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| summarize
+    TotalChecks  = count(),
+    Compliant    = countif(Status == "COMPLIANT"),
+    Deprecated   = countif(Status == "DEPRECATED"),
+    NeedsUpdate  = countif(Status == "REQUIRES_UPDATE"),
+    NotFound     = countif(Status == "NOT_FOUND")
+  by MachineName, Platform, OSVersion
+| extend ComplianceScore = round(100.0 * Compliant / TotalChecks, 1)
+| order by ComplianceScore asc
+
+
+// ── 2. Active compliance gaps — current fleet-wide view ──────────────────────
+// All open gaps grouped by type, with machine count and severity.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "compliance_gap"
+| summarize
+    MachineCount     = dcount(MachineName),
+    MachinesAffected = make_set(MachineName)
+  by GapType, Severity, AffectedComponent, Recommendation
+| order by
+    case(Severity, "CRITICAL", 4, "HIGH", 3, "MEDIUM", 2, "LOW", 1, 0) desc,
+    MachineCount desc
+
+
+// ── 3. Machines with CRITICAL or HIGH gaps ───────────────────────────────────
+// Triage list — machines that need immediate attention.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "compliance_gap"
+| where Severity in ("CRITICAL", "HIGH")
+| summarize
+    CriticalGaps = countif(Severity == "CRITICAL"),
+    HighGaps     = countif(Severity == "HIGH"),
+    GapTypes     = make_set(GapType)
+  by MachineName, Platform, OSVersion
+| order by CriticalGaps desc, HighGaps desc
+
+
+// ── 4. PQC algorithm coverage ────────────────────────────────────────────────
+// Which machines detect post-quantum algorithms in libcrypto?
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| where CheckName == "libcrypto Algorithm Check"
+| project TimeGenerated, MachineName, Platform, OSVersion, Status, Details
+| order by Status asc, MachineName asc
+
+
+// ── 5. OpenSSL version distribution ─────────────────────────────────────────
+// OpenSSL versions running across the fleet and their PQC readiness.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| where CheckName == "OpenSSL Version Check"
+| summarize
+    MachineCount = dcount(MachineName),
+    Machines     = make_set(MachineName)
+  by Version, Status
+| order by Version desc
+
+
+// ── 6. TLS and SSH deprecation exposure ──────────────────────────────────────
+// Machines with deprecated protocols, weak ciphers, or outdated SSH algorithms.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| where Category in ("tls_configuration", "ssh")
+| where Status in ("DEPRECATED", "REQUIRES_UPDATE")
+| project TimeGenerated, MachineName, Platform, CheckName, Category, Status, Details
+| order by MachineName asc, Category asc
+
+
+// ── 7. Certificate store issues ──────────────────────────────────────────────
+// Machines with non-compliant certificate stores (weak roots, expired, etc.)
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| where Category == "certificates"
+| where Status != "COMPLIANT"
+| project TimeGenerated, MachineName, Platform, CheckName, Status, Details
+| order by Status desc, MachineName asc
+
+
+// ── 8. FIPS compliance status ────────────────────────────────────────────────
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType in ("scan_result", "compliance_gap")
+| where CheckName == "OpenSSL FIPS Module Check"
+    or GapType == "fips_not_enabled"
+| project TimeGenerated, MachineName, Platform, RecordType, CheckName, GapType, Status, Details
+| order by MachineName asc
+
+
+// ── 9. Compliance gap trend (requires data over multiple days) ───────────────
+// Is the fleet improving? Gap count per day per severity.
+PQCCompliance_CL
+| where RecordType == "compliance_gap"
+| where TimeGenerated > ago(30d)
+| summarize GapCount = count() by bin(TimeGenerated, 1d), Severity
+| order by TimeGenerated asc
+
+
+// ── 10. Scan coverage — machines reporting in last 7 days ───────────────────
+// Confirms the daily CSE scheduler is running on each machine.
+PQCCompliance_CL
+| where TimeGenerated > ago(7d)
+| summarize LastScan = max(TimeGenerated), ScanCount = dcount(bin(TimeGenerated, 1d))
+  by MachineName, Platform, OSVersion
+| order by LastScan desc
+
+
+// ── 11. Stale machines — no scan in last 48 h ───────────────────────────────
+// Highlights machines where the daily scheduler may have stopped.
+PQCCompliance_CL
+| summarize LastScan = max(TimeGenerated) by MachineName, Platform
+| where LastScan < ago(48h)
+| order by LastScan asc
+
+
+// ── 12. Validator errors ─────────────────────────────────────────────────────
+// Failed checks or runtime errors from the validator itself.
+PQCCompliance_CL
+| where RecordType == "error"
+| where TimeGenerated > ago(7d)
+| summarize ErrorCount = count(), LastSeen = max(TimeGenerated)
+  by MachineName, GapType, Details
+| order by ErrorCount desc
+
+
+// ── 13. Executive dashboard — fleet-wide summary (last 24 h) ─────────────────
+// Single-pane compliance posture for leadership reporting.
+// Merges scan results and gap counts into one row per evaluation.
+let Checks = PQCCompliance_CL
+    | where TimeGenerated > ago(24h)
+    | where RecordType == "scan_result"
+    | summarize
+        TotalChecks     = count(),
+        CompliantChecks = countif(Status == "COMPLIANT"),
+        TotalMachines   = dcount(MachineName);
+let Gaps = PQCCompliance_CL
+    | where TimeGenerated > ago(24h)
+    | where RecordType == "compliance_gap"
+    | summarize
+        CriticalGaps = countif(Severity == "CRITICAL"),
+        HighGaps     = countif(Severity == "HIGH"),
+        TotalGaps    = count();
+Checks | cross join Gaps
+| project
+    TotalMachines,
+    TotalChecks,
+    CompliantChecks,
+    FleetScore   = round(100.0 * CompliantChecks / TotalChecks, 1),
+    TotalGaps,
+    CriticalGaps,
+    HighGaps
+
+
+// ── 14. Per-machine full check roster ────────────────────────────────────────
+// All checks for a single machine — replace <machine-name> before running.
+PQCCompliance_CL
+| where TimeGenerated > ago(24h)
+| where RecordType == "scan_result"
+| where MachineName == "<machine-name>"
+| project TimeGenerated, CheckName, Category, Status, Version, Algorithm, Details
+| order by Category asc, CheckName asc

@@ -1,0 +1,101 @@
+# PQC Compliance Requirements
+
+pqc_requirements:
+  # Minimum required versions
+  minimum_versions:
+    openssl: "3.0.0"
+    libcrypto: "3.0.0"
+    nss: "3.70"
+    bcrypt: "10.0"
+
+  # Required PQC algorithms
+  required_pqc_algorithms:
+    key_encapsulation:
+      - kyber-512
+      - kyber-768
+      - kyber-1024
+    digital_signature:
+      - dilithium2
+      - dilithium3
+      - dilithium5
+
+  # Deprecated algorithms to avoid
+  deprecated_algorithms:
+    cipher:
+      - DES
+      - RC4
+      - RC2
+      - IDEA
+    hash:
+      - MD5
+      - MD4
+      - SHA1
+    rsa_keys:
+      - RSA-512
+      - RSA-1024
+    elliptic_curve:
+      - NIST-P192
+      - SECT163k1
+
+  # Deprecated protocols
+  deprecated_protocols:
+    - SSL2.0
+    - SSL3.0
+    - TLS1.0
+    - TLS1.1
+
+  # Required security features
+  required_features:
+    - entropy_source
+    - certificate_validation
+    - tls_12_or_higher
+    - certificate_pinning_capable
+
+  # Compliance standards
+  compliance_standards:
+    - NIST_SP_800_56C_2
+    - NIST_SP_800_175B
+    - FIPS_140_2
+
+  # Gap severity mapping
+  gap_severity:
+    deprecated_openssl:
+      base_severity: HIGH
+      priority_score: 0.9
+    
+    no_pqc_algorithms:
+      base_severity: HIGH
+      priority_score: 0.95
+    
+    weak_root_certificates:
+      base_severity: MEDIUM
+      priority_score: 0.7
+    
+    fips_not_enabled:
+      base_severity: MEDIUM
+      priority_score: 0.6
+    
+    deprecated_protocols:
+      base_severity: HIGH
+      priority_score: 0.85
+    
+    weak_ciphers_available:
+      base_severity: MEDIUM
+      priority_score: 0.7
+
+  # Remediation priorities
+  remediation_priorities:
+    tier_1_critical:
+      - deprecated_openssl
+      - no_pqc_algorithms
+      - missing_entropy_source
+    
+    tier_2_high:
+      - deprecated_protocols
+      - weak_root_certificates
+      - no_certificate_validation
+    
+    tier_3_medium:
+      - fips_not_enabled
+      - weak_ciphers_available
+      - outdated_libraries

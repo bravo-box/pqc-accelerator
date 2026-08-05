@@ -1,0 +1,103 @@
+{
+  "properties": {
+    "displayName": "[PQC] Deploy PQC Compliance Validator to Arc machines",
+    "description": "Initiative that deploys the Post-Quantum Cryptography Compliance Validator to all Arc-connected machines. Linux uses DCE/DCR ingestion; Windows uses the Log Analytics Data Collector REST API (SharedKey).",
+    "policyType": "Custom",
+    "metadata": {
+      "category": "Arc",
+      "version": "2.0.0"
+    },
+    "parameters": {
+      "dceEndpoint": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Data Collection Endpoint URL",
+          "description": "DCE ingestion endpoint for both Linux and Windows."
+        }
+      },
+      "dcrImmutableId": {
+        "type": "String",
+        "metadata": { "displayName": "DCR Immutable ID" }
+      },
+      "streamName": {
+        "type": "String",
+        "defaultValue": "Custom-Json-PQCCompliance",
+        "metadata": { "displayName": "Log Analytics stream name" }
+      },
+      "linuxInstallScriptUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to Linux install.sh"
+        }
+      },
+      "windowsInstallScriptUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to Windows install.ps1"
+        }
+      },
+      "packageUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "SAS URL to pqc-validator.zip"
+        }
+      },
+      "scheduleTime": {
+        "type": "String",
+        "defaultValue": "03:00",
+        "metadata": {
+          "displayName": "Daily run time HH:MM UTC"
+        }
+      },
+      "forceUpdateTag": {
+        "type": "String",
+        "defaultValue": "v1",
+        "metadata": {
+          "displayName": "Force update tag",
+          "description": "Increment (e.g. v1 → v2) to push a new version of the validator to all Arc machines via policy remediation."
+        }
+      },
+      "linuxEffect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": ["DeployIfNotExists", "AuditIfNotExists", "Disabled"],
+        "metadata": { "displayName": "Linux policy effect" }
+      },
+      "windowsEffect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": ["DeployIfNotExists", "AuditIfNotExists", "Disabled"],
+        "metadata": { "displayName": "Windows policy effect" }
+      }
+    },
+    "policyDefinitions": [
+      {
+        "policyDefinitionReferenceId": "pqc-linux-arc-cse",
+        "policyDefinitionId": "<LINUX-POLICY-DEFINITION-ID>",
+        "parameters": {
+          "dceEndpoint":      { "value": "[parameters('dceEndpoint')]" },
+          "dcrImmutableId":   { "value": "[parameters('dcrImmutableId')]" },
+          "streamName":       { "value": "[parameters('streamName')]" },
+          "installScriptUrl": { "value": "[parameters('linuxInstallScriptUrl')]" },
+          "packageUrl":       { "value": "[parameters('packageUrl')]" },
+          "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
+          "effect":           { "value": "[parameters('linuxEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionReferenceId": "pqc-windows-arc-cse",
+        "policyDefinitionId": "<WINDOWS-POLICY-DEFINITION-ID>",
+        "parameters": {
+          "dceEndpoint":      { "value": "[parameters('dceEndpoint')]" },
+          "dcrImmutableId":   { "value": "[parameters('dcrImmutableId')]" },
+          "streamName":       { "value": "[parameters('streamName')]" },
+          "installScriptUrl": { "value": "[parameters('windowsInstallScriptUrl')]" },
+          "packageUrl":       { "value": "[parameters('packageUrl')]" },
+          "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
+          "effect":           { "value": "[parameters('windowsEffect')]" },
+          "forceUpdateTag":   { "value": "[parameters('forceUpdateTag')]" }
+        }
+      }
+    ]
+  }
+}

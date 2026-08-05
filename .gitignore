@@ -1,0 +1,16 @@
+# Generated environment files
+.env.pqc
+.env.pqc.new
+pqc-cse/.env.cse
+
+# Runtime output
+pqc-validator/logs/
+pqc-validator/reports/
+
+# Local Python environments
+pqc-validator/venv/
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store

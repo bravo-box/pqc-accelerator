@@ -1,0 +1,10 @@
+{
+"SpaProxyServer": {
+"ServerUrl": "http://localhost:3000",
+"RedirectUrl": "",
+"LaunchCommand": "npm start",
+"WorkingDirectory": "/Users/waynemeyer/Documents/github/customer/pqc_accelerator/webapp/PQCDashboard/ClientApp/",
+"MaxTimeoutInSeconds": "120",
+"KeepRunning": "false"
+}
+}

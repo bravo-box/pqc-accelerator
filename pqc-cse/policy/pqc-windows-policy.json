@@ -1,0 +1,168 @@
+{
+  "properties": {
+    "displayName": "[PQC] Deploy PQC Validator CSE to Windows Arc machines",
+    "description": "Deploys the Post-Quantum Cryptography Compliance Validator as a Custom Script Extension to Windows Arc-connected machines. The extension installs a daily Windows Scheduled Task that runs the validator and streams results to Azure Log Analytics via the machine's System-Assigned Managed Identity. Effect: DeployIfNotExists when the PQCValidatorCSE extension is absent.",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "metadata": {
+      "category": "Arc",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "dceEndpoint": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Data Collection Endpoint URL",
+          "description": "DCE ingestion endpoint URL."
+        }
+      },
+      "dcrImmutableId": {
+        "type": "String",
+        "metadata": {
+          "displayName": "DCR Immutable ID",
+          "description": "Immutable ID of the Data Collection Rule."
+        }
+      },
+      "streamName": {
+        "type": "String",
+        "defaultValue": "Custom-Json-PQCCompliance",
+        "metadata": {
+          "displayName": "Log Analytics stream name"
+        }
+      },
+      "installScriptUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to install.ps1",
+          "description": "Public blob URL to the install.ps1 bootstrap script."
+        }
+      },
+      "packageUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to pqc-validator.zip (SAS)",
+          "description": "SAS URL to the pqc-validator.zip package. Stored in protectedSettings — encrypted in transit and at rest."
+        }
+      },
+      "scheduleTime": {
+        "type": "String",
+        "defaultValue": "03:00",
+        "metadata": {
+          "displayName": "Daily run time (HH:MM UTC)"
+        }
+      },
+      "forceUpdateTag": {
+        "type": "String",
+        "defaultValue": "v1",
+        "metadata": {
+          "displayName": "Force update tag",
+          "description": "Increment this value (e.g. v1 → v2) to re-run the CSE on all machines and deploy a new version of the validator."
+        }
+      },
+      "effect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": ["DeployIfNotExists", "AuditIfNotExists", "Disabled"],
+        "metadata": {
+          "displayName": "Effect"
+        }
+      }
+    },
+    "policyRule": {
+      "if": {
+        "allOf": [
+          {
+            "field": "type",
+            "equals": "Microsoft.HybridCompute/machines"
+          },
+          {
+            "field": "Microsoft.HybridCompute/machines/osType",
+            "equals": "windows"
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]",
+        "details": {
+          "type": "Microsoft.HybridCompute/machines/extensions",
+          "name": "PQCValidatorCSE",
+          "existenceCondition": {
+            "allOf": [
+              {
+                "field": "Microsoft.HybridCompute/machines/extensions/publisher",
+                "equals": "Microsoft.Compute"
+              },
+              {
+                "field": "Microsoft.HybridCompute/machines/extensions/type",
+                "equals": "CustomScriptExtension"
+              },
+              {
+                "field": "Microsoft.HybridCompute/machines/extensions/provisioningState",
+                "equals": "Succeeded"
+              },
+              {
+                "field": "Microsoft.HybridCompute/machines/extensions/forceUpdateTag",
+                "equals": "[parameters('forceUpdateTag')]"
+              }
+            ]
+          },
+          "roleDefinitionIds": [
+            "/providers/Microsoft.Authorization/roleDefinitions/cd570a14-e51a-42ad-bac8-bafd67325302"
+          ],
+          "deployment": {
+            "properties": {
+              "mode": "incremental",
+              "parameters": {
+                "machineName":      { "value": "[field('name')]" },
+                "location":         { "value": "[field('location')]" },
+                "dceEndpoint":      { "value": "[parameters('dceEndpoint')]" },
+                "dcrImmutableId":   { "value": "[parameters('dcrImmutableId')]" },
+                "streamName":       { "value": "[parameters('streamName')]" },
+                "installScriptUrl": { "value": "[parameters('installScriptUrl')]" },
+                "packageUrl":       { "value": "[parameters('packageUrl')]" },
+                "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
+                "forceUpdateTag":   { "value": "[parameters('forceUpdateTag')]" }
+              },
+              "template": {
+                "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                  "machineName":      { "type": "string" },
+                  "location":         { "type": "string" },
+                  "dceEndpoint":      { "type": "string" },
+                  "dcrImmutableId":   { "type": "string" },
+                  "streamName":       { "type": "string" },
+                  "installScriptUrl": { "type": "string" },
+                  "packageUrl":       { "type": "securestring" },
+                  "scheduleTime":     { "type": "string" },
+                  "forceUpdateTag":   { "type": "string" }
+                },
+                "resources": [
+                  {
+                    "type": "Microsoft.HybridCompute/machines/extensions",
+                    "apiVersion": "2024-05-20-preview",
+                    "name": "[concat(parameters('machineName'), '/PQCValidatorCSE')]",
+                    "location": "[parameters('location')]",
+                    "properties": {
+                      "publisher": "Microsoft.Compute",
+                      "type": "CustomScriptExtension",
+                      "typeHandlerVersion": "1.10",
+                      "autoUpgradeMinorVersion": true,
+                      "settings": {
+                        "forceUpdateTag": "[parameters('forceUpdateTag')]"
+                      },
+                      "protectedSettings": {
+                        "fileUris": ["[parameters('installScriptUrl')]"],
+                        "commandToExecute": "[concat('powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command \"$f=(Get-ChildItem $env:SystemDrive\\\\Packages\\\\Plugins\\\\Microsoft.Compute.CustomScriptExtension -Recurse -Filter install.ps1 | Select-Object -First 1).FullName; if(!$f){throw ''install.ps1 not found''}; & $f -PackageUrl ''', parameters('packageUrl'), '''\"')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

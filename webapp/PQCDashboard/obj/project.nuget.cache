@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "dgSpecHash": "9Sv9opWOOYI=",
+  "success": true,
+  "projectFilePath": "/Users/waynemeyer/Documents/github/pqc-accelerator/webapp/PQCDashboard/PQCDashboard.csproj",
+  "expectedPackageFiles": [
+    "/Users/waynemeyer/.nuget/packages/azure.core/1.40.0/azure.core.1.40.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/azure.identity/1.12.0/azure.identity.1.12.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/azure.monitor.query/1.4.0/azure.monitor.query.1.4.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/microsoft.aspnetcore.spaproxy/10.0.0/microsoft.aspnetcore.spaproxy.10.0.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/microsoft.bcl.asyncinterfaces/1.1.1/microsoft.bcl.asyncinterfaces.1.1.1.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/microsoft.identity.client/4.61.3/microsoft.identity.client.4.61.3.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/microsoft.identity.client.extensions.msal/4.61.3/microsoft.identity.client.extensions.msal.4.61.3.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/microsoft.identitymodel.abstractions/6.35.0/microsoft.identitymodel.abstractions.6.35.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/system.clientmodel/1.0.0/system.clientmodel.1.0.0.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/system.memory.data/1.0.2/system.memory.data.1.0.2.nupkg.sha512",
+    "/Users/waynemeyer/.nuget/packages/system.security.cryptography.protecteddata/4.7.0/system.security.cryptography.protecteddata.4.7.0.nupkg.sha512"
+  ],
+  "logs": []
+}
