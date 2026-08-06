@@ -219,6 +219,7 @@ PQCCompliance_CL
 ## Web App Customized Dashboard
 
 There is a web interface that was provisioned, it can be found in the ```webapp``` folder. You can chose to run it locally, ```dotnet run``` or publish to an AppService. Its a .NET application with a React front-end.
+Ensure you update the ```appsettings.json``` with the workspace ID from your Log Analytics Workspace.
 
 ## Portability Guidelines
 
