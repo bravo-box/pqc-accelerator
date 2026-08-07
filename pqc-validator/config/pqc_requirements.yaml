@@ -3,10 +3,9 @@
 pqc_requirements:
   # Minimum required versions
   minimum_versions:
-    openssl: "3.0.0"
-    libcrypto: "3.0.0"
-    nss: "3.70"
-    bcrypt: "10.0"
+    openssl: "3.5.0"
+    libcrypto: "3.5.0"
+    nss: "3.98"
 
   # Required PQC algorithms
   required_pqc_algorithms:
@@ -51,11 +50,37 @@ pqc_requirements:
     - tls_12_or_higher
     - certificate_pinning_capable
 
-  # Compliance standards
+  # Compliance standards vocabulary used by federal compliance programs
   compliance_standards:
+    - CNSA_2_0
+    - FIPS_140_3
+    - FIPS_203
+    - FIPS_204
+    - FIPS_205
+    - NSM_10
+    - OMB_M_23_02
     - NIST_SP_800_56C_2
     - NIST_SP_800_175B
-    - FIPS_140_2
+
+  # Named profile metadata used in compliance artifacts and reviewer-facing reports
+  federal_profile:
+    name: Federal_PQC_Modernization_Baseline
+    version: "2026.08"
+    owner: PQC_Accelerator
+    audience: US_Federal_Civilian_and_Defense
+    reference_documents:
+      - CNSA_2_0
+      - FIPS_140_3
+      - FIPS_203
+      - FIPS_204
+      - FIPS_205
+      - NSM_10
+      - OMB_M_23_02
+    control_objectives:
+      - Inventory cryptographic libraries and algorithms with PQC coverage
+      - Detect absence of required ML-KEM and ML-DSA algorithm families
+      - Detect deprecated protocol exposure and weak trust anchors
+      - Prioritize remediation by severity and operational impact
 
   # Gap severity mapping
   gap_severity:
@@ -83,6 +108,10 @@ pqc_requirements:
       base_severity: MEDIUM
       priority_score: 0.7
 
+    rsa_2048_certificates:
+      base_severity: HIGH
+      priority_score: 0.9
+
   # Remediation priorities
   remediation_priorities:
     tier_1_critical:
@@ -94,6 +123,7 @@ pqc_requirements:
       - deprecated_protocols
       - weak_root_certificates
       - no_certificate_validation
+      - rsa_2048_certificates
     
     tier_3_medium:
       - fips_not_enabled

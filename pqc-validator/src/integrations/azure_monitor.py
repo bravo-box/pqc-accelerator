@@ -80,6 +80,38 @@ class AzureMonitorSink:
         self._token_cache: Optional[str] = None
         self._token_expires: Optional[float] = None
 
+    def _to_dcr_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Map normalized records to the DCR schema.
+        Custom columns are snake_case; TimeGenerated remains standard-cased.
+        declared in deploy/setup_azure.py (PQC_COLUMNS).
+        """
+        time_generated = record.get("TimeGenerated") or datetime.now(timezone.utc).isoformat()
+        raw_record = record.get("raw_record") or json.dumps(record, default=str)
+
+        return {
+            "TimeGenerated": time_generated,
+            "hostname": record.get("hostname", ""),
+            "platform": record.get("platform", ""),
+            "os_version": record.get("os_version", ""),
+            "record_type": record.get("record_type", ""),
+            "check_name": record.get("check_name", ""),
+            "category": record.get("category", ""),
+            "status": record.get("status", ""),
+            "details": record.get("details", ""),
+            "gap_type": record.get("gap_type", ""),
+            "severity": record.get("severity", ""),
+            "affected_component": record.get("affected_component", ""),
+            "recommendation": record.get("recommendation", ""),
+            "priority_score": float(record.get("priority_score", 0.0) or 0.0),
+            "algorithm": record.get("algorithm", ""),
+            "version": record.get("version", ""),
+            "error_type": record.get("error_type", ""),
+            "scan_run_id": record.get("scan_run_id", ""),
+            "record_hash": record.get("record_hash", ""),
+            "raw_record": raw_record,
+        }
+
     def send(self, record: Dict[str, Any]) -> None:
         """
         Buffer a single log record and flush when buffer is full.
@@ -87,11 +119,7 @@ class AzureMonitorSink:
         Args:
             record: A JSONL-style record from PQCLogger
         """
-        # Ensure TimeGenerated is present (required by Log Analytics)
-        if "TimeGenerated" not in record:
-            record["TimeGenerated"] = datetime.now(timezone.utc).isoformat()
-
-        self._buffer.append(record)
+        self._buffer.append(self._to_dcr_record(record))
 
         if len(self._buffer) >= self._buffer_size:
             self.flush()
@@ -288,37 +316,19 @@ class AzureMonitorSink:
 def sink_from_env() -> Optional["AzureMonitorSink"]:
     """
     Build an AzureMonitorSink from environment variables.
-    
-    Tries two methods in priority order:
-    
-    Method 1: Data Collector API (Preferred - simpler, more reliable)
-        Required env vars:
-            LOG_ANALYTICS_WORKSPACE_ID
-            LOG_ANALYTICS_WORKSPACE_KEY
-        Optional:
-            LOG_ANALYTICS_TABLE_NAME (defaults to "PQCCompliance")
-    
-    Method 2: DCR-based Logs Ingestion API (Legacy)
-        Required env vars:
-            PQC_DCE_ENDPOINT
-            PQC_DCR_IMMUTABLE_ID
-            PQC_STREAM_NAME
-        Optional:
-            PQC_MANAGED_IDENTITY_CLIENT_ID
+
+    Uses managed identity with DCR-based Logs Ingestion API.
+    Required env vars:
+        PQC_DCE_ENDPOINT
+        PQC_DCR_IMMUTABLE_ID
+    Optional:
+        PQC_STREAM_NAME (defaults to Custom-PQCCompliance_CL)
+        PQC_MANAGED_IDENTITY_CLIENT_ID
     """
-    
-    # Try Data Collector API first (preferred method)
-    workspace_id = os.environ.get("LOG_ANALYTICS_WORKSPACE_ID")
-    workspace_key = os.environ.get("LOG_ANALYTICS_WORKSPACE_KEY")
-    
-    if workspace_id and workspace_key:
-        # Create a wrapper that uses Data Collector API
-        return _create_datacollector_sink(workspace_id, workspace_key)
-    
-    # Fallback to DCR method
+
     dce = os.environ.get("PQC_DCE_ENDPOINT")
     dcr = os.environ.get("PQC_DCR_IMMUTABLE_ID")
-    stream = os.environ.get("PQC_STREAM_NAME", "Custom-Json-PQCCompliance")
+    stream = os.environ.get("PQC_STREAM_NAME", "Custom-PQCCompliance_CL")
 
     if not dce or not dcr:
         return None
@@ -330,71 +340,3 @@ def sink_from_env() -> Optional["AzureMonitorSink"]:
         use_managed_identity=True,
         client_id=os.environ.get("PQC_MANAGED_IDENTITY_CLIENT_ID")
     )
-
-
-def _create_datacollector_sink(workspace_id: str, workspace_key: str) -> "AzureMonitorSink":
-    """
-    Create an AzureMonitorSink adapter that uses the Log Analytics Data Collector API.
-    This is a wrapper that makes the Data Collector API compatible with the existing
-    AzureMonitorSink interface.
-    """
-    # Import here to avoid circular imports
-    from .azure_datacollector_api import AzureDataCollectorSink
-    
-    table_name = os.environ.get("LOG_ANALYTICS_TABLE_NAME", "PQCCompliance")
-    
-    # Create the Data Collector sink
-    dc_sink = AzureDataCollectorSink(workspace_id, workspace_key, log_type=table_name)
-    
-    # Wrap it in an adapter that implements the AzureMonitorSink interface
-    return _DataCollectorAdapter(dc_sink)
-
-
-class _DataCollectorAdapter(AzureMonitorSink):
-    """
-    Adapter that wraps AzureDataCollectorSink to be compatible with AzureMonitorSink interface.
-    This allows existing code to use either DCR or Data Collector API transparently.
-    """
-    
-    def __init__(self, dc_sink):
-        """Initialize adapter with a Data Collector sink."""
-        self.dc_sink = dc_sink
-        self._buffer: List[Dict[str, Any]] = []
-        self._buffer_size = 50
-        self.is_government = dc_sink.is_government
-        print(f"[AzureMonitorSink] Using Log Analytics Data Collector API")
-        print(f"[AzureMonitorSink] Workspace: {dc_sink.workspace_id[:8]}...")
-        print(f"[AzureMonitorSink] Cloud: {'Azure Government' if self.is_government else 'Azure Public'}")
-    
-    def send(self, record: Dict[str, Any]) -> None:
-        """Buffer a record and flush when buffer is full."""
-        if "TimeGenerated" not in record:
-            record["TimeGenerated"] = datetime.now(timezone.utc).isoformat()
-        
-        self._buffer.append(record)
-        
-        if len(self._buffer) >= self._buffer_size:
-            self.flush()
-    
-    def flush(self) -> bool:
-        """Send all buffered records."""
-        if not self._buffer:
-            return True
-        
-        success = self.dc_sink.send_batch(self._buffer)
-        self._buffer = []
-        return success
-    
-    def send_batch(self, records: List[Dict[str, Any]]) -> bool:
-        """Send a batch directly to Log Analytics."""
-        return self.dc_sink.send_batch(records)
-    
-    def upload_jsonl_file(self, jsonl_path: str) -> int:
-        """Upload a JSONL file to Log Analytics."""
-        self.dc_sink.upload_jsonl_file(jsonl_path)
-        # Count lines in file for return value
-        try:
-            with open(jsonl_path) as f:
-                return sum(1 for line in f if line.strip())
-        except:
-            return 0

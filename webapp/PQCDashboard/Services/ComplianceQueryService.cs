@@ -7,7 +7,7 @@ namespace PQCDashboard.Services;
 public class ComplianceQueryService(LogsQueryClient client, IConfiguration config)
 {
     private readonly string _workspaceId = config["LogAnalytics:WorkspaceId"]!;
-    private readonly string _table       = config["LogAnalytics:TableName"] ?? "PQCValidation_CL";
+    private readonly string _table       = config["LogAnalytics:TableName"] ?? "PQCCompliance_CL";
 
     public async Task<FleetSummary> GetFleetSummaryAsync(int lookbackHours = 24)
     {
@@ -17,9 +17,29 @@ public class ComplianceQueryService(LogsQueryClient client, IConfiguration confi
         var kql = $"""
             {_table}
             | where TimeGenerated > ago({lookbackHours}h)
-            | summarize arg_max(TimeGenerated, *) by hostname, check_name
+            | extend
+                                record_type = coalesce(tostring(column_ifexists("record_type_s", "")), tostring(column_ifexists("record_type", "")), tostring(column_ifexists("RecordType", ""))),
+                                record_hash = coalesce(tostring(column_ifexists("record_hash_s", "")), tostring(column_ifexists("record_hash", "")), tostring(column_ifexists("RecordHash", ""))),
+                hostname = coalesce(tostring(column_ifexists("hostname_s", "")), tostring(column_ifexists("hostname", "")), tostring(column_ifexists("MachineName", ""))),
+                platform = coalesce(tostring(column_ifexists("platform_s", "")), tostring(column_ifexists("platform", "")), tostring(column_ifexists("Platform", ""))),
+                os_version = coalesce(tostring(column_ifexists("os_version_s", "")), tostring(column_ifexists("os_version", "")), tostring(column_ifexists("OSVersion", ""))),
+                check_name = coalesce(tostring(column_ifexists("check_name_s", "")), tostring(column_ifexists("check_name", "")), tostring(column_ifexists("CheckName", ""))),
+                category = coalesce(tostring(column_ifexists("category_s", "")), tostring(column_ifexists("category", "")), tostring(column_ifexists("Category", ""))),
+                status = coalesce(tostring(column_ifexists("status_s", "")), tostring(column_ifexists("status", "")), tostring(column_ifexists("Status", ""))),
+                details = coalesce(tostring(column_ifexists("details_s", "")), tostring(column_ifexists("details", "")), tostring(column_ifexists("Details", ""))),
+                gap_type = coalesce(tostring(column_ifexists("gap_type_s", "")), tostring(column_ifexists("gap_type", "")), tostring(column_ifexists("GapType", ""))),
+                severity = coalesce(tostring(column_ifexists("severity_s", "")), tostring(column_ifexists("severity", "")), tostring(column_ifexists("Severity", ""))),
+                affected_component = coalesce(tostring(column_ifexists("affected_component_s", "")), tostring(column_ifexists("affected_component", "")), tostring(column_ifexists("AffectedComponent", ""))),
+                recommendation = coalesce(tostring(column_ifexists("recommendation_s", "")), tostring(column_ifexists("recommendation", "")), tostring(column_ifexists("Recommendation", ""))),
+                priority_score = todouble(coalesce(column_ifexists("priority_score_d", real(null)), column_ifexists("priority_score", real(null)), column_ifexists("PriorityScore", real(null)), 0.0))
+                        | extend dedup_key = iff(
+                                isempty(record_hash),
+                                strcat(hostname, "|", record_type, "|", check_name, "|", gap_type, "|", severity, "|", status, "|", details),
+                                record_hash
+                            )
+                        | summarize arg_max(TimeGenerated, *) by dedup_key
             | project TimeGenerated, hostname, platform, os_version,
-                      check_name, category, status, details,
+                                            record_type, check_name, category, status, details,
                       gap_type, severity, affected_component, recommendation, priority_score
             | sort by hostname asc, priority_score desc
             """;
@@ -89,8 +109,25 @@ public class ComplianceQueryService(LogsQueryClient client, IConfiguration confi
         var kql = $"""
             {_table}
             | where TimeGenerated > ago({lookbackHours}h)
+            | extend hostname = coalesce(tostring(column_ifexists("hostname_s", "")), tostring(column_ifexists("hostname", "")), tostring(column_ifexists("MachineName", "")))
             | where hostname == '{hostname.Replace("'", "''")}'
-            | project TimeGenerated, hostname, platform, check_name, status,
+            | extend
+                                record_type = coalesce(tostring(column_ifexists("record_type_s", "")), tostring(column_ifexists("record_type", "")), tostring(column_ifexists("RecordType", ""))),
+                                record_hash = coalesce(tostring(column_ifexists("record_hash_s", "")), tostring(column_ifexists("record_hash", "")), tostring(column_ifexists("RecordHash", ""))),
+                platform = coalesce(tostring(column_ifexists("platform_s", "")), tostring(column_ifexists("platform", "")), tostring(column_ifexists("Platform", ""))),
+                check_name = coalesce(tostring(column_ifexists("check_name_s", "")), tostring(column_ifexists("check_name", "")), tostring(column_ifexists("CheckName", ""))),
+                status = coalesce(tostring(column_ifexists("status_s", "")), tostring(column_ifexists("status", "")), tostring(column_ifexists("Status", ""))),
+                details = coalesce(tostring(column_ifexists("details_s", "")), tostring(column_ifexists("details", "")), tostring(column_ifexists("Details", ""))),
+                gap_type = coalesce(tostring(column_ifexists("gap_type_s", "")), tostring(column_ifexists("gap_type", "")), tostring(column_ifexists("GapType", ""))),
+                severity = coalesce(tostring(column_ifexists("severity_s", "")), tostring(column_ifexists("severity", "")), tostring(column_ifexists("Severity", ""))),
+                recommendation = coalesce(tostring(column_ifexists("recommendation_s", "")), tostring(column_ifexists("recommendation", "")), tostring(column_ifexists("Recommendation", "")))
+                        | extend dedup_key = iff(
+                                isempty(record_hash),
+                                strcat(hostname, "|", record_type, "|", check_name, "|", gap_type, "|", severity, "|", status, "|", details),
+                                record_hash
+                            )
+                        | summarize arg_max(TimeGenerated, *) by dedup_key
+                        | project TimeGenerated, hostname, platform, check_name, status,
                       gap_type, severity, details, recommendation
             | sort by TimeGenerated desc
             """;

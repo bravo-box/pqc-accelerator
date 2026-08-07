@@ -247,6 +247,35 @@ This project section was cleaned for portability and review clarity:
 2. Identity and RBAC propagation can take several minutes after group membership changes.
 3. Use scoped policy assignment during peer review to avoid broad unintended rollout.
 
+## Windows PQC Detection (Review Item 2.3)
+
+Windows validation now includes explicit post-quantum detection in both runtime paths:
+
+1. Python validator path in pqc-validator/src/validators/windows/validator.py.
+2. Native PowerShell runtime path in pqc-cse/windows/PQCValidator.psm1.
+
+Checks added:
+
+1. Windows CNG PQC Algorithm Enumeration
+  - Enumerates CNG algorithms and searches for ML-KEM or ML-DSA family names, including Kyber and Dilithium aliases for legacy provider builds.
+2. SChannel Post-Quantum Cipher Suite Detection
+  - Enumerates TLS cipher suites and detects post-quantum or hybrid suite indicators.
+
+Result semantics:
+
+1. COMPLIANT
+  - At least one expected PQC signal is present for that check.
+2. REQUIRES_UPDATE
+  - The check ran successfully but no PQC signal was detected.
+3. UNKNOWN
+  - Required platform command was unavailable or enumeration failed.
+
+Operational notes for reviewers:
+
+1. CNG and SChannel capability depends on host OS level, patch baseline, and installed crypto providers.
+2. UNKNOWN does not imply compliance; it indicates an evidence gap.
+3. REQUIRES_UPDATE indicates actionable modernization work, typically provider enablement, policy updates, or OS servicing.
+
 ## Troubleshooting
 
 1. Check logs of the CSE for any errors, log locations:
@@ -256,8 +285,8 @@ This project section was cleaned for portability and review clarity:
   - PQC Log ```C:\pqc-validator\logs```
 
 - Linux
-  - CSE Log
-  - PQC Log
+  - CSE Log ```/var/log/pqc-cse-install.log```
+  - PQC-Validator Log ```/var/log/pqc-validator/run-<date>.log```
 
 ## Peer Review Checklist
 

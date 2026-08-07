@@ -6,8 +6,6 @@ Orchestrates validation across platforms and generates reports.
 import sys
 import platform as sys_platform
 import argparse
-import os
-from pathlib import Path
 from typing import Optional
 
 from src.common.logger import PQCLogger
@@ -20,26 +18,10 @@ from src.integrations.azure_monitor import sink_from_env, AzureMonitorSink
 
 def get_sink():
     """
-    Build the Azure Monitor sink.
-    Priority:
-      1. Data Collector API  — LOG_ANALYTICS_WORKSPACE_ID + LOG_ANALYTICS_WORKSPACE_KEY
-         Simpler, no DCR/DCE required, works with shared key auth.
-      2. Logs Ingestion API  — PQC_DCE_ENDPOINT + PQC_DCR_IMMUTABLE_ID
-         Uses Managed Identity, requires DCR/DCE infrastructure.
-    Returns None if neither set of credentials is present.
+    Build the Azure Monitor sink using managed identity Logs Ingestion.
+    Returns None when DCR/DCE environment variables are not configured.
     """
-    workspace_id  = os.environ.get("LOG_ANALYTICS_WORKSPACE_ID")
-    workspace_key = os.environ.get("LOG_ANALYTICS_WORKSPACE_KEY")
-    if workspace_id and workspace_key:
-        from src.integrations.azure_datacollector_api import AzureDataCollectorSink
-        print("Azure Monitor sink: Data Collector API (workspace key)")
-        return AzureDataCollectorSink(
-            workspace_id=workspace_id,
-            workspace_key=workspace_key,
-            log_type="PQCCompliance"
-        )
-
-    return sink_from_env()   # falls back to DCE/DCR if env vars set
+    return sink_from_env()
 
 
 def get_validator_for_platform(logger: PQCLogger):
@@ -121,9 +103,12 @@ def run_validation(
         print(f"  {name}: {path}")
 
     # Flush any remaining buffered records to Azure Monitor
-    logger.flush_azure()
+    azure_flush_ok = logger.flush_azure()
     if azure_sink:
-        print("  azure_monitor: streamed to Log Analytics (Log Analytics Workspace)")
+        if azure_flush_ok:
+            print("  azure_monitor: streamed to Log Analytics (Log Analytics Workspace)")
+        else:
+            print("  azure_monitor: upload failed (check Managed Identity/token access)")
 
     # Generate reports
     if generate_reports:
