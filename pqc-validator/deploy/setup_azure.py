@@ -34,23 +34,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import os
-
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.loganalytics import LogAnalyticsManagementClient
-from azure.mgmt.monitor import MonitorManagementClient
-from azure.mgmt.monitor.models import (
-    DataCollectionEndpointResource,
-    DataCollectionRuleResource,
-    DataCollectionRuleDataSources,
-    DataCollectionRuleDestinations,
-    LogAnalyticsDestination,
-    DataFlow,
-    StreamDeclaration,
-    ColumnDefinition,
-)
-from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.authorization import AuthorizationManagementClient
-from azure.mgmt.authorization.models import RoleAssignmentCreateParameters
+import tempfile
 
 # Monitoring Metrics Publisher role ID (built-in, fixed GUID)
 # Recommended usage: assign once to a dedicated Microsoft Entra security
@@ -94,23 +78,27 @@ def get_azure_cloud_config() -> dict:
 
 # PQC custom table schema — mirrors the JSONL record structure
 PQC_COLUMNS = [
-    ColumnDefinition(name="TimeGenerated",      type="datetime"),
-    ColumnDefinition(name="MachineName",        type="string"),
-    ColumnDefinition(name="Platform",           type="string"),
-    ColumnDefinition(name="OSVersion",          type="string"),
-    ColumnDefinition(name="RecordType",         type="string"),   # scan_result | compliance_gap | error
-    ColumnDefinition(name="CheckName",          type="string"),
-    ColumnDefinition(name="Category",           type="string"),
-    ColumnDefinition(name="Status",             type="string"),   # COMPLIANT | DEPRECATED | etc.
-    ColumnDefinition(name="Details",            type="string"),
-    ColumnDefinition(name="GapType",            type="string"),
-    ColumnDefinition(name="Severity",           type="string"),   # CRITICAL | HIGH | MEDIUM | LOW
-    ColumnDefinition(name="AffectedComponent",  type="string"),
-    ColumnDefinition(name="Recommendation",     type="string"),
-    ColumnDefinition(name="PriorityScore",      type="real"),
-    ColumnDefinition(name="Algorithm",          type="string"),
-    ColumnDefinition(name="Version",            type="string"),
-    ColumnDefinition(name="RawRecord",          type="string"),   # full JSON for audit
+    {"name": "TimeGenerated", "type": "datetime"},
+    {"name": "ingestion_time", "type": "datetime"},
+    {"name": "hostname", "type": "string"},
+    {"name": "platform", "type": "string"},
+    {"name": "os_version", "type": "string"},
+    {"name": "record_type", "type": "string"},   # scan_result | compliance_gap | error
+    {"name": "check_name", "type": "string"},
+    {"name": "category", "type": "string"},
+    {"name": "status", "type": "string"},   # COMPLIANT | DEPRECATED | etc.
+    {"name": "details", "type": "string"},
+    {"name": "gap_type", "type": "string"},
+    {"name": "severity", "type": "string"},   # CRITICAL | HIGH | MEDIUM | LOW
+    {"name": "affected_component", "type": "string"},
+    {"name": "recommendation", "type": "string"},
+    {"name": "priority_score", "type": "real"},
+    {"name": "algorithm", "type": "string"},
+    {"name": "version", "type": "string"},
+    {"name": "error_type", "type": "string"},
+    {"name": "scan_run_id", "type": "string"},
+    {"name": "record_hash", "type": "string"},
+    {"name": "raw_record", "type": "string"},   # full JSON for audit
 ]
 
 
@@ -147,48 +135,171 @@ def create_log_analytics_workspace(law_client, rg_name: str, workspace_name: str
     }
 
 
-def create_custom_table(subscription_id: str, rg_name: str, workspace_name: str,
-                         location: str):
+def ensure_custom_table_schema(
+    subscription_id: str,
+    rg_name: str,
+    workspace_name: str,
+    table_plan: str,
+    table_retention_days: int,
+    table_total_retention_days: int,
+) -> bool:
     """
-    Create PQCCompliance_CL custom table via Azure REST API.
-    (The SDK does not yet expose custom table creation directly.)
+    Ensure PQCCompliance_CL exists and contains all required columns.
+
+    If the table already exists, missing columns are added in place using ARM REST.
+    Existing columns are preserved.
     """
-    print(f"  Creating custom table 'PQCCompliance_CL'...")
+    table_name = "PQCCompliance_CL"
+    print(f"  Ensuring custom table '{table_name}' schema...")
 
-    table_body = {
-        "properties": {
-            "schema": {
-                "name": "PQCCompliance_CL",
-                "columns": [
-                    {"name": col.name, "type": col.type}
-                    for col in PQC_COLUMNS
-                ]
-            },
-            "retentionInDays": 90
-        }
-    }
+    desired_columns = list(PQC_COLUMNS)
+    desired_map = {c["name"]: c["type"] for c in desired_columns}
+    column_args = [f"{c['name']}={c['type']}" for c in desired_columns]
 
-    # Use az CLI as the Python SDK doesn't expose custom log table creation yet
-    result = subprocess.run(
+    # Step 1: Check whether table already exists
+    show_result = subprocess.run(
         [
-            "az", "monitor", "log-analytics", "workspace", "table", "create",
+            "az", "monitor", "log-analytics", "workspace", "table", "show",
             "--subscription", subscription_id,
             "--resource-group", rg_name,
             "--workspace-name", workspace_name,
-            "--name", "PQCCompliance_CL",
-            "--columns",
-            " ".join(f"{col.name}={col.type}" for col in PQC_COLUMNS),
-            "--retention-time", "90"
+            "--name", table_name,
+            "-o", "json"
         ],
         capture_output=True,
         text=True
     )
 
-    if result.returncode != 0:
-        print(f"  ⚠  Table creation via CLI failed: {result.stderr.strip()}")
-        print(f"     The table may already exist or you may need to create it manually.")
+    if show_result.returncode != 0:
+        # Table does not exist: create with full desired schema
+        create_cmd = [
+            "az", "monitor", "log-analytics", "workspace", "table", "create",
+            "--subscription", subscription_id,
+            "--resource-group", rg_name,
+            "--workspace-name", workspace_name,
+            "--name", table_name,
+            "--columns",
+            *column_args,
+            "--retention-time", str(table_retention_days),
+            "--plan", table_plan,
+        ]
+        create_result = subprocess.run(
+            create_cmd,
+            capture_output=True,
+            text=True
+        )
+        if create_result.returncode != 0:
+            print(f"  ✗ Failed to create table: {create_result.stderr.strip()}")
+            return False
+
+        print(f"  ✓ Custom table '{table_name}' created")
+        return True
+
+    # Step 2: Table exists — reconcile schema
+    table = json.loads(show_result.stdout)
+    # az CLI may return table fields either top-level or under "properties".
+    properties = table.get("properties", {}) if isinstance(table.get("properties"), dict) else {}
+    schema = properties.get("schema") if isinstance(properties.get("schema"), dict) else None
+    if not isinstance(schema, dict):
+        schema = table.get("schema", {}) if isinstance(table.get("schema"), dict) else {}
+    existing_columns = schema.get("columns", [])
+    existing_map = {c.get("name"): c.get("type") for c in existing_columns if c.get("name")}
+
+    missing_columns = [c for c in desired_columns if c["name"] not in existing_map]
+    conflicting_columns = [
+        name for name, dtype in desired_map.items()
+        if name in existing_map and existing_map[name] != dtype
+    ]
+    current_plan = str(properties.get("plan", table.get("plan", "Analytics")))
+    current_retention = int(
+        properties.get("retentionInDays", table.get("retentionInDays", table_retention_days))
+        or table_retention_days
+    )
+    current_total_retention = int(
+        properties.get("totalRetentionInDays", table.get("totalRetentionInDays", table_total_retention_days))
+        or table_total_retention_days
+    )
+    plan_or_retention_changed = (
+        current_plan != table_plan
+        or current_retention != table_retention_days
+        or current_total_retention != table_total_retention_days
+    )
+
+    if not missing_columns and not conflicting_columns and not plan_or_retention_changed:
+        print(f"  ✓ Custom table '{table_name}' already matches required schema")
+        return True
+
+    table_subtype = str(schema.get("tableSubType", table.get("tableSubType", "")))
+    table_type = str(schema.get("tableType", table.get("tableType", "")))
+    is_classic_table = table_subtype.lower() == "classic" or table_type.lower() == "customlog"
+
+    if is_classic_table:
+        print("  ℹ  Detected Classic custom table. Schema mutation via DCR table API is not supported.")
+        if plan_or_retention_changed:
+            print(
+                "  ⚠  Classic table settings differ from requested values; "
+                "automatic plan/retention updates are skipped."
+            )
+            print(
+                "     Current values are kept. To enforce new values, migrate to a DCR-based table first."
+            )
+
+        if missing_columns:
+            print(
+                "  ⚠  Classic table is missing the new normalized columns; "
+                "schema updates are blocked for this table type."
+            )
+            print(
+                "     Keep using compatibility queries or migrate to a DCR-based table "
+                "before enforcing normalized schema."
+            )
+
+        return True
+
+    if conflicting_columns:
+        print("  ⚠  Existing columns with incompatible types detected:")
+        for name in conflicting_columns:
+            print(f"     - {name}: existing={existing_map[name]}, required={desired_map[name]}")
+        print("     Type changes are not applied automatically; add new compatible columns instead.")
+
+    if plan_or_retention_changed:
+        print(
+            "  ℹ  Updating table plan/retention: "
+            f"plan {current_plan}->{table_plan}, "
+            f"retention {current_retention}->{table_retention_days}, "
+            f"totalRetention {current_total_retention}->{table_total_retention_days}"
+        )
+
+    if not missing_columns and not plan_or_retention_changed:
+        return True
+
+    update_cmd = [
+        "az", "monitor", "log-analytics", "workspace", "table", "update",
+        "--subscription", subscription_id,
+        "--resource-group", rg_name,
+        "--workspace-name", workspace_name,
+        "--name", table_name,
+        "--plan", table_plan,
+        "--retention-time", str(table_retention_days),
+        "--total-retention-time", str(table_total_retention_days),
+        "-o", "none",
+    ]
+
+    if missing_columns:
+        update_cmd.extend(["--columns", *column_args])
+
+    update_result = subprocess.run(update_cmd, capture_output=True, text=True)
+
+    if update_result.returncode != 0:
+        print(f"  ✗ Failed to update schema in place: {update_result.stderr.strip()}")
+        print("     You can retry after validating RBAC and API permissions for table updates.")
+        return False
+
+    if missing_columns:
+        print(f"  ✓ Added missing columns to '{table_name}': {', '.join(c['name'] for c in missing_columns)}")
     else:
-        print(f"  ✓ Custom table 'PQCCompliance_CL' ready")
+        print(f"  ✓ Updated table plan/retention on '{table_name}'")
+    return True
 
 
 def create_dce(monitor_client, rg_name: str, dce_name: str, location: str) -> dict:
@@ -217,7 +328,7 @@ def create_dcr(monitor_client, rg_name: str, dcr_name: str, location: str,
             location=location,
             data_collection_endpoint_id=dce_id,
             stream_declarations={
-                "PQCCompliance_CL": StreamDeclaration(
+                "Custom-PQCCompliance_CL": StreamDeclaration(
                     columns=PQC_COLUMNS
                 )
             },
@@ -231,10 +342,11 @@ def create_dcr(monitor_client, rg_name: str, dcr_name: str, location: str,
             ),
             data_flows=[
                 DataFlow(
-                    streams=["PQCCompliance_CL"],
+                    streams=["Custom-PQCCompliance_CL"],
                     destinations=["pqc-law-destination"],
-                    output_stream="PQCCompliance_CL",
-                    transform_kql="source | extend TimeGenerated = now()"
+                    output_stream="Custom-PQCCompliance_CL",
+                    # Preserve machine event timestamps while also stamping ingest time.
+                    transform_kql="source | extend ingestion_time = now()"
                 )
             ]
         )
@@ -277,7 +389,7 @@ def write_env_file(config: dict, output_path: str = ".env.pqc"):
         f.write(f"# Generated: {datetime.now().isoformat()}\n\n")
         f.write(f"PQC_DCE_ENDPOINT={config['dce_endpoint']}\n")
         f.write(f"PQC_DCR_IMMUTABLE_ID={config['dcr_immutable_id']}\n")
-        f.write(f"PQC_STREAM_NAME=PQCCompliance_CL\n")
+        f.write(f"PQC_STREAM_NAME=Custom-PQCCompliance_CL\n")
     print(f"\n  ✓ Environment config written to {output_path}")
     print(f"    Distribute this file to Arc machines or store values in Key Vault.")
 
@@ -288,13 +400,47 @@ def main():
     )
     parser.add_argument("--subscription", required=True)
     parser.add_argument("--resource-group", default="pqc-compliance-rg")
-    parser.add_argument("--location", default="eastus")
+    parser.add_argument("--location", default="usgovvirginia")
     parser.add_argument("--workspace-name", default="pqc-law")
     parser.add_argument("--dce-name", default="pqc-dce")
     parser.add_argument("--dcr-name", default="pqc-dcr")
+    parser.add_argument(
+        "--workspace-sku",
+        default="PerGB2018",
+        choices=["PerGB2018", "CapacityReservation"],
+        help="Workspace billing SKU. Default: PerGB2018"
+    )
+    parser.add_argument(
+        "--workspace-retention-days",
+        type=int,
+        default=90,
+        help="Workspace retention in days (default: 90)"
+    )
+    parser.add_argument(
+        "--table-plan",
+        default="Basic",
+        choices=["Analytics", "Basic", "Auxiliary"],
+        help="Log Analytics table plan for PQCCompliance_CL (default: Basic)"
+    )
+    parser.add_argument(
+        "--table-retention-days",
+        type=int,
+        default=30,
+        help="Interactive retention days for PQCCompliance_CL (default: 30)"
+    )
+    parser.add_argument(
+        "--table-total-retention-days",
+        type=int,
+        default=365,
+        help="Total retention days (hot + archive) for PQCCompliance_CL (default: 365)"
+    )
     parser.add_argument("--output-env", default=".env.pqc",
                         help="Path to write the .env config file")
     args = parser.parse_args()
+
+    if args.table_total_retention_days < args.table_retention_days:
+        print("  ✗ table-total-retention-days must be >= table-retention-days")
+        sys.exit(1)
 
     print(f"\n{'='*60}")
     print("PQC Compliance — Azure Infrastructure Setup (via Azure CLI)")
@@ -302,6 +448,11 @@ def main():
     print(f"Subscription:    {args.subscription}")
     print(f"Resource Group:  {args.resource_group}")
     print(f"Location:        {args.location}")
+    print(f"Workspace SKU:   {args.workspace_sku}")
+    print(f"Workspace Retention Days: {args.workspace_retention_days}")
+    print(f"Table Plan:      {args.table_plan}")
+    print(f"Table Retention Days: {args.table_retention_days}")
+    print(f"Table Total Retention Days: {args.table_total_retention_days}")
     print()
 
     # Detect Azure cloud environment
@@ -333,7 +484,9 @@ def main():
          "--subscription", args.subscription,
          "--resource-group", args.resource_group,
          "--workspace-name", args.workspace_name,
-         "--location", args.location],
+         "--location", args.location,
+         "--sku", args.workspace_sku,
+         "--retention-time", str(args.workspace_retention_days)],
         capture_output=True,
         text=True
     )
@@ -361,24 +514,17 @@ def main():
     workspace_id = workspace["id"]
     print(f"  ✓ Workspace ID: {workspace_id}")
 
-    # 4. Create custom table
-    print("4. Creating custom table 'PQCCompliance_CL'...")
-    columns_str = " ".join(f"{col.name}={col.type}" for col in PQC_COLUMNS)
-    result = subprocess.run(
-        ["az", "monitor", "log-analytics", "workspace", "table", "create",
-         "--subscription", args.subscription,
-         "--resource-group", args.resource_group,
-         "--workspace-name", args.workspace_name,
-         "--name", "PQCCompliance_CL",
-         "--columns", columns_str,
-         "--retention-time", "90"],
-        capture_output=True,
-        text=True
-    )
-    if result.returncode != 0:
-        print(f"  ⚠  {result.stderr.strip()}")
-    else:
-        print(f"  ✓ Custom table ready")
+    # 4. Ensure custom table schema (create or patch in place)
+    print("4. Ensuring custom table schema for 'PQCCompliance_CL'...")
+    if not ensure_custom_table_schema(
+        subscription_id=args.subscription,
+        rg_name=args.resource_group,
+        workspace_name=args.workspace_name,
+        table_plan=args.table_plan,
+        table_retention_days=args.table_retention_days,
+        table_total_retention_days=args.table_total_retention_days,
+    ):
+        sys.exit(1)
 
     # 5. Create Data Collection Endpoint
     print("5. Creating Data Collection Endpoint...")
@@ -420,17 +566,55 @@ def main():
     print(f"  ✓ DCE ID: {dce_id}")
     print(f"  ✓ DCE Endpoint: {dce_endpoint}")
 
-    # 7. Create Data Collection Rule (simplified)
+    # 7. Create Data Collection Rule with full payload
     print("7. Creating Data Collection Rule...")
-    result = subprocess.run(
-        ["az", "monitor", "data-collection", "rule", "create",
-         "--subscription", args.subscription,
-         "--resource-group", args.resource_group,
-         "--name", args.dcr_name,
-         "--location", args.location],
-        capture_output=True,
-        text=True
-    )
+    dcr_payload = {
+        "properties": {
+            "dataCollectionEndpointId": dce_id,
+            "streamDeclarations": {
+                "Custom-PQCCompliance_CL": {
+                    "columns": PQC_COLUMNS
+                }
+            },
+            "destinations": {
+                "logAnalytics": [
+                    {
+                        "name": "pqc-law-destination",
+                        "workspaceResourceId": workspace_id
+                    }
+                ]
+            },
+            "dataFlows": [
+                {
+                    "streams": ["Custom-PQCCompliance_CL"],
+                    "destinations": ["pqc-law-destination"],
+                    "outputStream": "Custom-PQCCompliance_CL",
+                    "transformKql": "source | extend ingestion_time = now()"
+                }
+            ]
+        }
+    }
+
+    dcr_rule_file = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            json.dump(dcr_payload, tmp)
+            dcr_rule_file = tmp.name
+
+        result = subprocess.run(
+            ["az", "monitor", "data-collection", "rule", "create",
+             "--subscription", args.subscription,
+             "--resource-group", args.resource_group,
+             "--name", args.dcr_name,
+             "--location", args.location,
+             "--rule-file", dcr_rule_file],
+            capture_output=True,
+            text=True
+        )
+    finally:
+        if dcr_rule_file and os.path.exists(dcr_rule_file):
+            os.remove(dcr_rule_file)
+
     if result.returncode != 0:
         print(f"  ⚠  {result.stderr.strip()}")
     else:

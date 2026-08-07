@@ -25,7 +25,7 @@
       },
       "streamName": {
         "type": "String",
-        "defaultValue": "Custom-Json-PQCCompliance",
+        "defaultValue": "Custom-PQCCompliance_CL",
         "metadata": {
           "displayName": "Log Analytics stream name"
         }
@@ -42,6 +42,27 @@
         "metadata": {
           "displayName": "URL to pqc-validator.zip (SAS)",
           "description": "SAS URL to the pqc-validator.zip package. Stored in protectedSettings — encrypted in transit and at rest."
+        }
+      },
+      "packageSha256": {
+        "type": "String",
+        "metadata": {
+          "displayName": "SHA-256 of pqc-validator.zip",
+          "description": "Expected SHA-256 digest for package integrity verification."
+        }
+      },
+      "packageSigUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to pqc-validator.zip.sig (SAS)",
+          "description": "SAS URL to detached package signature."
+        }
+      },
+      "packageCertUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to signing certificate (SAS)",
+          "description": "SAS URL to DER certificate containing package signing public key."
         }
       },
       "scheduleTime": {
@@ -120,6 +141,9 @@
                 "streamName":       { "value": "[parameters('streamName')]" },
                 "installScriptUrl": { "value": "[parameters('installScriptUrl')]" },
                 "packageUrl":       { "value": "[parameters('packageUrl')]" },
+                "packageSha256":    { "value": "[parameters('packageSha256')]" },
+                "packageSigUrl":    { "value": "[parameters('packageSigUrl')]" },
+                "packageCertUrl":   { "value": "[parameters('packageCertUrl')]" },
                 "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
                 "forceUpdateTag":   { "value": "[parameters('forceUpdateTag')]" }
               },
@@ -134,6 +158,9 @@
                   "streamName":       { "type": "string" },
                   "installScriptUrl": { "type": "string" },
                   "packageUrl":       { "type": "securestring" },
+                  "packageSha256":    { "type": "string" },
+                  "packageSigUrl":    { "type": "securestring" },
+                  "packageCertUrl":   { "type": "securestring" },
                   "scheduleTime":     { "type": "string" },
                   "forceUpdateTag":   { "type": "string" }
                 },
@@ -148,12 +175,11 @@
                       "type": "CustomScriptExtension",
                       "typeHandlerVersion": "1.10",
                       "autoUpgradeMinorVersion": true,
-                      "settings": {
-                        "forceUpdateTag": "[parameters('forceUpdateTag')]"
-                      },
+                      "forceUpdateTag": "[parameters('forceUpdateTag')]",
+                      "settings": {},
                       "protectedSettings": {
                         "fileUris": ["[parameters('installScriptUrl')]"],
-                        "commandToExecute": "[concat('powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command \"$f=(Get-ChildItem $env:SystemDrive\\\\Packages\\\\Plugins\\\\Microsoft.Compute.CustomScriptExtension -Recurse -Filter install.ps1 | Select-Object -First 1).FullName; if(!$f){throw ''install.ps1 not found''}; & $f -PackageUrl ''', parameters('packageUrl'), '''\"')]"
+                        "commandToExecute": "[concat('powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command \"& { $env:PQC_DCE_ENDPOINT=''', parameters('dceEndpoint'), '''; $env:PQC_DCR_IMMUTABLE_ID=''', parameters('dcrImmutableId'), '''; $env:PQC_STREAM_NAME=''', parameters('streamName'), '''; $env:PQC_PACKAGE_URL=''', parameters('packageUrl'), '''; $env:PQC_PACKAGE_SHA256=''', parameters('packageSha256'), '''; $env:PQC_PACKAGE_SIG_URL=''', parameters('packageSigUrl'), '''; $env:PQC_PACKAGE_CERT_URL=''', parameters('packageCertUrl'), '''; $env:PQC_SCHEDULE_TIME=''', parameters('scheduleTime'), '''; $f=(Get-ChildItem $env:SystemDrive\\\\Packages\\\\Plugins\\\\Microsoft.Compute.CustomScriptExtension -Recurse -Filter install.ps1 | Select-Object -First 1).FullName; if(!$f){throw ''install.ps1 not found''}; & $f }\"')]"
                       }
                     }
                   }

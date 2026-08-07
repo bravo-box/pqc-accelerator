@@ -17,6 +17,12 @@ param windowsInstallScriptUrl = 'https://<storage>.blob.core.windows.net/pqc-cse
 // Generate with: package-and-upload.sh --generate-sas
 param packageUrl = 'https://<storage>.blob.core.windows.net/pqc-cse/pqc-validator.zip?<sas-token>'
 
+// Required package integrity and authenticity inputs
+param packageSha256    = '<sha256-hex-from-.env.cse>'
+param packageSigUrl    = 'https://<storage>.blob.core.windows.net/pqc-cse/pqc-validator.zip.sig?<sas-token>'
+param packagePubkeyUrl = 'https://<storage>.blob.core.windows.net/pqc-cse/pqc-signing-key.pem?<sas-token>'
+param packageCertUrl   = 'https://<storage>.blob.core.windows.net/pqc-cse/pqc-signing-cert.cer?<sas-token>'
+
 // ── Schedule ──────────────────────────────────────────────────────────────────
 param scheduleTime = '03:00'
 

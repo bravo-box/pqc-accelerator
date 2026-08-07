@@ -4,6 +4,7 @@ Generates HTML, JSON, and CSV reports for compliance tracking.
 """
 
 import json
+import yaml
 from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime
@@ -25,6 +26,28 @@ class ReportGenerator:
         self.report_dir = Path(report_dir)
         self.report_dir.mkdir(parents=True, exist_ok=True)
         self.scan_file = self.log_dir / "scans.jsonl"
+        self.requirements_file = Path(__file__).resolve().parents[2] / "config" / "pqc_requirements.yaml"
+
+    def load_compliance_profile(self) -> Dict[str, Any]:
+        """Load compliance profile and standards from requirements config."""
+        profile: Dict[str, Any] = {
+            "compliance_standards": [],
+            "federal_profile": {}
+        }
+
+        if not self.requirements_file.exists():
+            return profile
+
+        try:
+            with open(self.requirements_file, 'r', encoding='utf-8') as req_file:
+                data = yaml.safe_load(req_file) or {}
+                requirements = data.get('pqc_requirements', {})
+                profile['compliance_standards'] = requirements.get('compliance_standards', [])
+                profile['federal_profile'] = requirements.get('federal_profile', {})
+        except Exception as e:
+            print(f"Error loading compliance profile: {e}")
+
+        return profile
     
     def load_scan_data(self) -> List[Dict[str, Any]]:
         """Load all scan records from JSONL file."""
@@ -91,6 +114,7 @@ class ReportGenerator:
     def generate_json_report(self) -> str:
         """Generate comprehensive JSON report."""
         records = self.load_scan_data()
+        compliance_profile = self.load_compliance_profile()
         
         gaps = self.analyze_compliance_gaps(records)
         checks = self.analyze_checks(records)
@@ -105,6 +129,7 @@ class ReportGenerator:
         report = {
             'generated_at': datetime.now().isoformat(),
             'host_info': host_info,
+            'compliance_profile': compliance_profile,
             'summary': {
                 'total_checks': checks.get('total_checks', 0),
                 'total_gaps': gaps.get('total', 0),
@@ -112,7 +137,9 @@ class ReportGenerator:
                 'gaps_by_severity': {
                     severity: len(items) 
                     for severity, items in gaps.get('by_severity', {}).items()
-                }
+                },
+                'federal_profile_name': compliance_profile.get('federal_profile', {}).get('name', ''),
+                'standards_count': len(compliance_profile.get('compliance_standards', []))
             },
             'compliance_gaps': gaps.get('by_severity', {}),
             'checks_by_category': checks.get('by_category', {}),
@@ -129,6 +156,7 @@ class ReportGenerator:
     def generate_html_report(self) -> str:
         """Generate HTML report for visualization."""
         records = self.load_scan_data()
+        compliance_profile = self.load_compliance_profile()
         gaps = self.analyze_compliance_gaps(records)
         checks = self.analyze_checks(records)
         
@@ -140,6 +168,16 @@ class ReportGenerator:
                 break
         
         # Build HTML
+        standards = compliance_profile.get('compliance_standards', [])
+        federal_profile = compliance_profile.get('federal_profile', {})
+        standards_html = ''.join(f'<li>{item}</li>' for item in standards)
+        references_html = ''.join(
+            f'<li>{item}</li>' for item in federal_profile.get('reference_documents', [])
+        )
+        objectives_html = ''.join(
+            f'<li>{item}</li>' for item in federal_profile.get('control_objectives', [])
+        )
+
         html = f"""
 <!DOCTYPE html>
 <html>
@@ -212,6 +250,21 @@ class ReportGenerator:
         .section {{
             margin: 30px 0;
         }}
+        .pill-list {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }}
+        .pill-list li {{
+            background-color: #e8eef7;
+            color: #1a2f4a;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 13px;
+        }}
     </style>
 </head>
 <body>
@@ -240,6 +293,28 @@ class ReportGenerator:
             <p>Total Gaps: {gaps.get('total', 0)}</p>
             <p class="critical">Critical: {len(gaps.get('by_severity', {}).get('CRITICAL', []))}</p>
             <p class="high">High: {len(gaps.get('by_severity', {}).get('HIGH', []))}</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Federal Compliance Profile</h2>
+        <div class="card">
+            <p><strong>Name:</strong> {federal_profile.get('name', 'Not configured')}</p>
+            <p><strong>Version:</strong> {federal_profile.get('version', 'N/A')}</p>
+            <p><strong>Owner:</strong> {federal_profile.get('owner', 'N/A')}</p>
+            <p><strong>Audience:</strong> {federal_profile.get('audience', 'N/A')}</p>
+            <h3>Standards Vocabulary</h3>
+            <ul class="pill-list">
+                {standards_html}
+            </ul>
+            <h3>Reference Documents</h3>
+            <ul>
+                {references_html}
+            </ul>
+            <h3>Control Objectives</h3>
+            <ul>
+                {objectives_html}
+            </ul>
         </div>
     </div>
     

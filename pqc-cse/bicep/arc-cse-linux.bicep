@@ -30,6 +30,16 @@ Stored in protectedSettings so the token is encrypted at rest and in transit.
 @secure()
 param packageUrl string
 
+@description('Expected SHA-256 for pqc-validator.zip')
+param packageSha256 string
+
+@description('SAS URL to detached signature for pqc-validator.zip')
+@secure()
+param packageSigUrl string
+
+@description('URL to PEM public key used to verify pqc-validator.zip signature')
+param packagePubkeyUrl string
+
 @description('Daily run time HH:MM in UTC. The systemd timer fires at this time with up to 5 min random jitter across the fleet.')
 param scheduleTime string = '03:00'
 
@@ -67,7 +77,7 @@ resource pqcCseLinux 'Microsoft.HybridCompute/machines/extensions@2024-05-20-pre
     protectedSettings: {
       // fileUris are downloaded by the CSE agent before commandToExecute runs
       fileUris: [installScriptUrl]
-      commandToExecute: 'PQC_DCE_ENDPOINT="${dceEndpoint}" PQC_DCR_IMMUTABLE_ID="${dcrImmutableId}" PQC_STREAM_NAME="${streamName}" PQC_PACKAGE_URL="${packageUrl}" PQC_SCHEDULE_TIME="${scheduleTime}" /bin/bash install.sh'
+      commandToExecute: 'PQC_DCE_ENDPOINT="${dceEndpoint}" PQC_DCR_IMMUTABLE_ID="${dcrImmutableId}" PQC_STREAM_NAME="${streamName}" PQC_PACKAGE_URL="${packageUrl}" PQC_PACKAGE_SHA256="${packageSha256}" PQC_PACKAGE_SIG_URL="${packageSigUrl}" PQC_PACKAGE_PUBKEY_URL="${packagePubkeyUrl}" PQC_SCHEDULE_TIME="${scheduleTime}" /bin/bash install.sh'
     }
   }
 }

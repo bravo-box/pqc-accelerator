@@ -45,6 +45,27 @@
           "description": "SAS URL to the pqc-validator.zip package. Stored in protectedSettings — encrypted in transit and at rest."
         }
       },
+      "packageSha256": {
+        "type": "String",
+        "metadata": {
+          "displayName": "SHA-256 of pqc-validator.zip",
+          "description": "Expected SHA-256 digest for package integrity verification."
+        }
+      },
+      "packageSigUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to pqc-validator.zip.sig (SAS)",
+          "description": "SAS URL to detached package signature."
+        }
+      },
+      "packagePubkeyUrl": {
+        "type": "String",
+        "metadata": {
+          "displayName": "URL to signing public key",
+          "description": "URL to PEM public key for detached signature verification."
+        }
+      },
       "scheduleTime": {
         "type": "String",
         "defaultValue": "03:00",
@@ -104,7 +125,7 @@
                 "equals": "Succeeded"
               },
               {
-                "field": "Microsoft.HybridCompute/machines/extensions/settings.forceUpdateTag",
+                "field": "Microsoft.HybridCompute/machines/extensions/forceUpdateTag",
                 "equals": "[parameters('forceUpdateTag')]"
               }
             ]
@@ -123,6 +144,9 @@
                 "streamName":       { "value": "[parameters('streamName')]" },
                 "installScriptUrl": { "value": "[parameters('installScriptUrl')]" },
                 "packageUrl":       { "value": "[parameters('packageUrl')]" },
+                "packageSha256":    { "value": "[parameters('packageSha256')]" },
+                "packageSigUrl":    { "value": "[parameters('packageSigUrl')]" },
+                "packagePubkeyUrl": { "value": "[parameters('packagePubkeyUrl')]" },
                 "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
                 "forceUpdateTag":   { "value": "[parameters('forceUpdateTag')]" }
               },
@@ -137,6 +161,9 @@
                   "streamName":       { "type": "string" },
                   "installScriptUrl": { "type": "string" },
                   "packageUrl":       { "type": "securestring" },
+                  "packageSha256":    { "type": "string" },
+                  "packageSigUrl":    { "type": "securestring" },
+                  "packagePubkeyUrl": { "type": "string" },
                   "scheduleTime":     { "type": "string" },
                   "forceUpdateTag":   { "type": "string" }
                 },
@@ -151,12 +178,11 @@
                       "type": "CustomScript",
                       "typeHandlerVersion": "2.1",
                       "autoUpgradeMinorVersion": true,
-                      "settings": {
-                        "forceUpdateTag": "[parameters('forceUpdateTag')]"
-                      },
+                      "forceUpdateTag": "[parameters('forceUpdateTag')]",
+                      "settings": {},
                       "protectedSettings": {
                         "fileUris": ["[parameters('installScriptUrl')]"],
-                        "commandToExecute": "[concat('PQC_DCE_ENDPOINT=\"', parameters('dceEndpoint'), '\" PQC_DCR_IMMUTABLE_ID=\"', parameters('dcrImmutableId'), '\" PQC_STREAM_NAME=\"', parameters('streamName'), '\" PQC_PACKAGE_URL=\"', parameters('packageUrl'), '\" PQC_SCHEDULE_TIME=\"', parameters('scheduleTime'), '\" /bin/bash install.sh')]"
+                        "commandToExecute": "[concat('PQC_DCE_ENDPOINT=\"', parameters('dceEndpoint'), '\" PQC_DCR_IMMUTABLE_ID=\"', parameters('dcrImmutableId'), '\" PQC_STREAM_NAME=\"', parameters('streamName'), '\" PQC_PACKAGE_URL=\"', parameters('packageUrl'), '\" PQC_PACKAGE_SHA256=\"', parameters('packageSha256'), '\" PQC_PACKAGE_SIG_URL=\"', parameters('packageSigUrl'), '\" PQC_PACKAGE_PUBKEY_URL=\"', parameters('packagePubkeyUrl'), '\" PQC_SCHEDULE_TIME=\"', parameters('scheduleTime'), '\" /bin/bash install.sh')]"
                       }
                     }
                   }

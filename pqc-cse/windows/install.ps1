@@ -17,10 +17,19 @@
     DCR Immutable ID (dcr-xxxx).
 
 .PARAMETER StreamName
-    Log Analytics stream name. Default: Custom-Json-PQCCompliance
+    Log Analytics stream name. Default: Custom-PQCCompliance_CL
 
 .PARAMETER PackageUrl
     SAS URL to pqc-validator.zip in Azure Blob Storage.
+
+.PARAMETER PackageSha256
+    Expected SHA-256 of pqc-validator.zip.
+
+.PARAMETER PackageSigUrl
+    SAS URL to detached signature for pqc-validator.zip.
+
+.PARAMETER PackageCertUrl
+    SAS URL to DER certificate containing signing public key.
 
 .PARAMETER ScheduleTime
     Daily run time HH:MM in UTC. Default: 03:00
@@ -31,8 +40,11 @@
 param(
     [string]$DceEndpoint    = 'https://pqc-dce-odbi.usgovvirginia-1.ingest.monitor.azure.us',
     [string]$DcrImmutableId = 'dcr-d1e102cdb8d54975b5218038d0be7b50',
-    [string]$StreamName     = 'Custom-Json-PQCCompliance',
+    [string]$StreamName     = 'Custom-PQCCompliance_CL',
     [string]$PackageUrl     = '',
+    [string]$PackageSha256  = '',
+    [string]$PackageSigUrl  = '',
+    [string]$PackageCertUrl = '',
     [string]$ScheduleTime   = '03:00',
     [string]$InstallDir     = 'C:\pqc-validator'
 )
@@ -42,6 +54,9 @@ if ($env:PQC_DCE_ENDPOINT     -and -not $PSBoundParameters.ContainsKey('DceEndpo
 if ($env:PQC_DCR_IMMUTABLE_ID -and -not $PSBoundParameters.ContainsKey('DcrImmutableId')) { $DcrImmutableId = $env:PQC_DCR_IMMUTABLE_ID }
 if ($env:PQC_STREAM_NAME      -and -not $PSBoundParameters.ContainsKey('StreamName'))      { $StreamName     = $env:PQC_STREAM_NAME }
 if ($env:PQC_PACKAGE_URL      -and -not $PSBoundParameters.ContainsKey('PackageUrl'))      { $PackageUrl     = $env:PQC_PACKAGE_URL }
+if ($env:PQC_PACKAGE_SHA256   -and -not $PSBoundParameters.ContainsKey('PackageSha256'))   { $PackageSha256  = $env:PQC_PACKAGE_SHA256 }
+if ($env:PQC_PACKAGE_SIG_URL  -and -not $PSBoundParameters.ContainsKey('PackageSigUrl'))   { $PackageSigUrl  = $env:PQC_PACKAGE_SIG_URL }
+if ($env:PQC_PACKAGE_CERT_URL -and -not $PSBoundParameters.ContainsKey('PackageCertUrl'))  { $PackageCertUrl = $env:PQC_PACKAGE_CERT_URL }
 if ($env:PQC_SCHEDULE_TIME    -and -not $PSBoundParameters.ContainsKey('ScheduleTime'))    { $ScheduleTime   = $env:PQC_SCHEDULE_TIME }
 if ($env:PQC_INSTALL_DIR      -and -not $PSBoundParameters.ContainsKey('InstallDir'))      { $InstallDir     = $env:PQC_INSTALL_DIR }
 
@@ -64,16 +79,51 @@ function Write-Log {
     Add-Content -Path $InstallLog -Value $line -Encoding UTF8
 }
 
+function Test-DetachedRsaSignature {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory=$true)][string]$SignaturePath,
+        [Parameter(Mandatory=$true)][string]$CertificatePath
+    )
+
+    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertificatePath)
+    $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($cert)
+    if (-not $rsa) {
+        throw 'Certificate does not contain an RSA public key'
+    }
+
+    $data = [System.IO.File]::ReadAllBytes($FilePath)
+    $sig = [System.IO.File]::ReadAllBytes($SignaturePath)
+
+    try {
+        $ok = $rsa.VerifyData(
+            $data,
+            $sig,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+        )
+    } finally {
+        $rsa.Dispose()
+    }
+
+    return $ok
+}
+
 New-Item -ItemType Directory -Force (Split-Path $InstallLog) | Out-Null
 New-Item -ItemType File -Force $InstallLog | Out-Null
 
 # ── Validate parameters ───────────────────────────────────────────────────────
 Write-Log '=========================================================='
 Write-Log 'PQC Validator CSE Install starting'
-Write-Log 'Version      : 3.0.0'
+Write-Log 'Version      : 3.1.0'
 Write-Log '=========================================================='
 
-foreach ($kv in @{PackageUrl=$PackageUrl}.GetEnumerator()) {
+foreach ($kv in @{
+    PackageUrl=$PackageUrl
+    PackageSha256=$PackageSha256
+    PackageSigUrl=$PackageSigUrl
+    PackageCertUrl=$PackageCertUrl
+}.GetEnumerator()) {
     if ([string]::IsNullOrWhiteSpace($kv.Value)) {
         Write-Log "ERROR: Required parameter '$($kv.Key)' is not set"
         exit 1
@@ -85,27 +135,54 @@ Write-Log "DCR ID       : $DcrImmutableId"
 Write-Log "Stream Name  : $StreamName"
 Write-Log "Schedule     : $ScheduleTime UTC"
 Write-Log "Install Dir  : $InstallDir"
+Write-Log "Package SHA  : $PackageSha256"
 
 # ── TLS 1.2 / security protocol ───────────────────────────────────────────────
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # ── Download & extract validator package ──────────────────────────────────────
-Write-Log '--- Downloading PQC Validator package...'
+Write-Log '--- Downloading signed PQC Validator package...'
 $zipPath = "$env:TEMP\pqc-validator.zip"
+$sigPath = "$env:TEMP\pqc-validator.zip.sig"
+$certPath = "$env:TEMP\pqc-signing-cert.cer"
 
 try {
     Invoke-WebRequest -Uri $PackageUrl -OutFile $zipPath -UseBasicParsing
+    Invoke-WebRequest -Uri $PackageSigUrl -OutFile $sigPath -UseBasicParsing
+    Invoke-WebRequest -Uri $PackageCertUrl -OutFile $certPath -UseBasicParsing
 } catch {
-    Write-Log "ERROR: Failed to download package: $_"
+    Write-Log "ERROR: Failed to download package artifact: $_"
     exit 1
 }
+
+Write-Log '--- Verifying package SHA-256...'
+$actualHash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
+$expectedHash = $PackageSha256.ToLowerInvariant()
+if ($actualHash -ne $expectedHash) {
+    Write-Log 'ERROR: Package hash mismatch'
+    Write-Log "  expected: $expectedHash"
+    Write-Log "  actual  : $actualHash"
+    exit 1
+}
+
+Write-Log '--- Verifying detached package signature...'
+try {
+    if (-not (Test-DetachedRsaSignature -FilePath $zipPath -SignaturePath $sigPath -CertificatePath $certPath)) {
+        Write-Log 'ERROR: Signature verification failed'
+        exit 1
+    }
+} catch {
+    Write-Log "ERROR: Signature verification error: $_"
+    exit 1
+}
+Write-Log 'Package verification passed'
 
 Write-Log "--- Extracting to $InstallDir..."
 if (Test-Path $InstallDir) {
     Remove-Item -Recurse -Force $InstallDir
 }
 Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
-Remove-Item $zipPath -Force
+Remove-Item $zipPath, $sigPath, $certPath -Force
 
 # Verify the module was included in the package
 if (-not (Test-Path $ModuleFile)) {
@@ -162,7 +239,7 @@ $taskSettings = New-ScheduledTaskSettingsSet `
     -Hidden
 
 $taskPrincipal = New-ScheduledTaskPrincipal `
-    -UserId    'SYSTEM' `
+    -UserId    'NT AUTHORITY\SYSTEM' `
     -LogonType ServiceAccount `
     -RunLevel  Highest
 

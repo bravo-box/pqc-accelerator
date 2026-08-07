@@ -42,6 +42,9 @@ log() { echo "[$(date -u '+%H:%M:%S')] $*"; }
 
 # ── Load environment files ────────────────────────────────────────────────────
 ENV_PQC="$SCRIPT_DIR/../.env.pqc"
+if [ ! -f "$ENV_PQC" ] && [ -f "$SCRIPT_DIR/../pqc-validator/deploy/.env.pqc" ]; then
+    ENV_PQC="$SCRIPT_DIR/../pqc-validator/deploy/.env.pqc"
+fi
 ENV_CSE="$SCRIPT_DIR/.env.cse"
 
 for f in "$ENV_PQC" "$ENV_CSE"; do
@@ -55,6 +58,14 @@ done
 # shellcheck source=/dev/null
 source "$ENV_PQC"
 source "$ENV_CSE"
+
+for var in PQC_PACKAGE_URL PQC_PACKAGE_SHA256 PQC_PACKAGE_SIG_URL PQC_PACKAGE_PUBKEY_URL PQC_PACKAGE_CERT_URL PQC_LINUX_INSTALL_SCRIPT_URL PQC_WINDOWS_INSTALL_SCRIPT_URL; do
+    if [ -z "${!var:-}" ]; then
+        echo "ERROR: Missing required variable '$var' in $ENV_CSE"
+        echo "  Re-run package-and-upload.sh to regenerate secure artifact URLs."
+        exit 1
+    fi
+done
 
 az account set --subscription "$SUBSCRIPTION"
 SUB_SCOPE="/subscriptions/$SUBSCRIPTION"
@@ -93,6 +104,13 @@ register_policy() {
     jq '.properties.parameters'  "$json_file" > "$tmp_params"
 
     local policy_id
+    local scope_args=()
+    if [ -n "$MGMT_GROUP" ]; then
+        scope_args+=(--management-group "$MGMT_GROUP")
+    else
+        scope_args+=(--subscription "$SUBSCRIPTION")
+    fi
+
     policy_id=$(az policy definition create \
         --name         "$name" \
         --display-name "$display_name" \
@@ -100,7 +118,7 @@ register_policy() {
         --rules        "$tmp_rules" \
         --params       "$tmp_params" \
         --mode         Indexed \
-        --subscription "$SUBSCRIPTION" \
+        "${scope_args[@]}" \
         --query id --output tsv)
 
     rm -f "$tmp_rules" "$tmp_params"
@@ -142,12 +160,19 @@ jq --arg linux  "$LINUX_POLICY_ID" \
 jq '.properties.parameters' "$INITIATIVE_FILE" > "$TMP_PARAMS"
 
 log "--- Creating policy initiative..."
+SCOPE_ARGS=()
+if [ -n "$MGMT_GROUP" ]; then
+    SCOPE_ARGS+=(--management-group "$MGMT_GROUP")
+else
+    SCOPE_ARGS+=(--subscription "$SUBSCRIPTION")
+fi
+
 INITIATIVE_ID=$(az policy set-definition create \
     --name         "pqc-validator-arc-initiative" \
     --display-name "[PQC] Deploy PQC Compliance Validator to Arc machines" \
     --definitions  "$TMP_DEFS" \
     --params       "$TMP_PARAMS" \
-    --subscription "$SUBSCRIPTION" \
+    "${SCOPE_ARGS[@]}" \
     --query id --output tsv)
 
 rm -f "$TMP_DEFS" "$TMP_PARAMS"
@@ -156,10 +181,13 @@ log "Initiative: $INITIATIVE_ID"
 # ── Determine assignment scope ────────────────────────────────────────────────
 if [ -n "$MGMT_GROUP" ]; then
     ASSIGN_SCOPE="/providers/Microsoft.Management/managementGroups/$MGMT_GROUP"
+    REMEDIATION_DISCOVERY_MODE="ExistingNonCompliant"
 elif [ -n "$SCOPE_RG" ]; then
     ASSIGN_SCOPE="$SUB_SCOPE/resourceGroups/$SCOPE_RG"
+    REMEDIATION_DISCOVERY_MODE="ReEvaluateCompliance"
 else
     ASSIGN_SCOPE="$SUB_SCOPE"
+    REMEDIATION_DISCOVERY_MODE="ReEvaluateCompliance"
 fi
 log "Assignment scope: $ASSIGN_SCOPE"
 
@@ -172,20 +200,22 @@ ASSIGNMENT_JSON=$(az policy assignment create \
     --scope "$ASSIGN_SCOPE" \
     --location "$MI_LOCATION" \
     --mi-system-assigned \
-    --params "{
-      \"workspaceId\":             {\"value\": \"$LOG_ANALYTICS_WORKSPACE_ID\"},
-      \"workspaceKey\":            {\"value\": \"$LOG_ANALYTICS_WORKSPACE_KEY\"},
-      \"logType\":                 {\"value\": \"PQCCompliance\"},
-      \"odsSuffix\":               {\"value\": \"opinsights.azure.us\"},
-      \"dceEndpoint\":             {\"value\": \"$PQC_DCE_ENDPOINT\"},
-      \"dcrImmutableId\":          {\"value\": \"$PQC_DCR_IMMUTABLE_ID\"},
-      \"streamName\":              {\"value\": \"${PQC_STREAM_NAME:-Custom-PQCCompliance_CL}\"},
-      \"linuxInstallScriptUrl\":   {\"value\": \"$PQC_LINUX_INSTALL_SCRIPT_URL\"},
-      \"windowsInstallScriptUrl\": {\"value\": \"$PQC_WINDOWS_INSTALL_SCRIPT_URL\"},
-      \"packageUrl\":              {\"value\": \"$PQC_PACKAGE_URL\"},
-      \"scheduleTime\":            {\"value\": \"03:00\"},
-      \"forceUpdateTag\":          {\"value\": \"v2\"}
-    }" \
+        --params "{
+            \"dceEndpoint\":             {\"value\": \"$PQC_DCE_ENDPOINT\"},
+            \"dcrImmutableId\":          {\"value\": \"$PQC_DCR_IMMUTABLE_ID\"},
+            \"streamName\":              {\"value\": \"${PQC_STREAM_NAME:-Custom-PQCCompliance_CL}\"},
+            \"linuxInstallScriptUrl\":   {\"value\": \"$PQC_LINUX_INSTALL_SCRIPT_URL\"},
+            \"windowsInstallScriptUrl\": {\"value\": \"$PQC_WINDOWS_INSTALL_SCRIPT_URL\"},
+            \"packageUrl\":              {\"value\": \"$PQC_PACKAGE_URL\"},
+            \"packageSha256\":           {\"value\": \"$PQC_PACKAGE_SHA256\"},
+            \"packageSigUrl\":           {\"value\": \"$PQC_PACKAGE_SIG_URL\"},
+            \"packagePubkeyUrl\":        {\"value\": \"$PQC_PACKAGE_PUBKEY_URL\"},
+            \"packageCertUrl\":          {\"value\": \"$PQC_PACKAGE_CERT_URL\"},
+            \"scheduleTime\":            {\"value\": \"03:00\"},
+            \"forceUpdateTag\":          {\"value\": \"v4\"},
+            \"linuxEffect\":             {\"value\": \"DeployIfNotExists\"},
+            \"windowsEffect\":           {\"value\": \"DeployIfNotExists\"}
+        }" \
     --output json)
 ASSIGNMENT_ID=$(echo "$ASSIGNMENT_JSON"  | jq -r '.id')
 ASSIGNMENT_MI=$(echo "$ASSIGNMENT_JSON"  | jq -r '.identity.principalId')
@@ -196,15 +226,23 @@ log "Assignment MI principal: $ASSIGNMENT_MI"
 # Role: Azure Connected Machine Resource Administrator
 # GUID:  cd570a14-e51a-42ad-bac8-bafd67325302
 log "--- Granting policy MI the Arc resource administrator role..."
-
-az role assignment create \
-    --role "cd570a14-e51a-42ad-bac8-bafd67325302" \
+EXISTING_ROLE_ASSIGNMENT_ID=$(az role assignment list \
     --assignee-object-id "$ASSIGNMENT_MI" \
-    --assignee-principal-type ServicePrincipal \
     --scope "$ASSIGN_SCOPE" \
-    --output none
+    --query "[?roleDefinitionId && contains(roleDefinitionId, 'cd570a14-e51a-42ad-bac8-bafd67325302')].id | [0]" \
+    --output tsv 2>/dev/null || true)
 
-log "Role granted to assignment MI: $ASSIGNMENT_MI"
+if [ -n "$EXISTING_ROLE_ASSIGNMENT_ID" ]; then
+    log "Role assignment already exists for policy MI: $EXISTING_ROLE_ASSIGNMENT_ID"
+else
+    az role assignment create \
+        --role "cd570a14-e51a-42ad-bac8-bafd67325302" \
+        --assignee-object-id "$ASSIGNMENT_MI" \
+        --assignee-principal-type ServicePrincipal \
+        --scope "$ASSIGN_SCOPE" \
+        --output none
+    log "Role granted to assignment MI: $ASSIGNMENT_MI"
+fi
 
 # ── Create remediation tasks for existing machines ────────────────────────────
 # For initiative (policy set) assignments, a separate remediation task is required
@@ -212,22 +250,66 @@ log "Role granted to assignment MI: $ASSIGNMENT_MI"
 # --policy-assignment takes the assignment NAME (not resource ID).
 # --scope must match the assignment scope.
 log "--- Creating remediation task for Linux Arc machines..."
-az policy remediation create \
+LINUX_REMEDIATION_STATE=$(az policy remediation show \
     --name "pqc-remediation-linux" \
-    --policy-assignment "pqc-validator-arc" \
-    --definition-reference-id "pqc-linux-arc-cse" \
-    --subscription "$SUBSCRIPTION" \
-    --resource-discovery-mode ReEvaluateCompliance \
-    --output none
+    --management-group "$MGMT_GROUP" \
+    --query "properties.provisioningState" \
+    --output tsv 2>/dev/null || true)
+
+if [ -n "$LINUX_REMEDIATION_STATE" ] && [ "$LINUX_REMEDIATION_STATE" != "Failed" ]; then
+    log "Linux remediation already exists (state: $LINUX_REMEDIATION_STATE); skipping create"
+else
+    set +e
+    LINUX_REMEDIATION_CREATE_OUTPUT=$(az policy remediation create \
+        --name "pqc-remediation-linux" \
+        --policy-assignment "pqc-validator-arc" \
+        --definition-reference-id "pqc-linux-arc-cse" \
+        --subscription "$SUBSCRIPTION" \
+        --resource-discovery-mode "$REMEDIATION_DISCOVERY_MODE" \
+        --output none 2>&1)
+    LINUX_REMEDIATION_CREATE_EXIT=$?
+    set -e
+
+    if [ $LINUX_REMEDIATION_CREATE_EXIT -ne 0 ]; then
+        if echo "$LINUX_REMEDIATION_CREATE_OUTPUT" | grep -q "InvalidUpdateRemediationRequest"; then
+            log "Linux remediation already active; skipping create"
+        else
+            echo "$LINUX_REMEDIATION_CREATE_OUTPUT"
+            exit $LINUX_REMEDIATION_CREATE_EXIT
+        fi
+    fi
+fi
 
 log "--- Creating remediation task for Windows Arc machines..."
-az policy remediation create \
+WINDOWS_REMEDIATION_STATE=$(az policy remediation show \
     --name "pqc-remediation-windows" \
-    --policy-assignment "pqc-validator-arc" \
-    --definition-reference-id "pqc-windows-arc-cse" \
-    --subscription "$SUBSCRIPTION" \
-    --resource-discovery-mode ReEvaluateCompliance \
-    --output none
+    --management-group "$MGMT_GROUP" \
+    --query "properties.provisioningState" \
+    --output tsv 2>/dev/null || true)
+
+if [ -n "$WINDOWS_REMEDIATION_STATE" ] && [ "$WINDOWS_REMEDIATION_STATE" != "Failed" ]; then
+    log "Windows remediation already exists (state: $WINDOWS_REMEDIATION_STATE); skipping create"
+else
+    set +e
+    WINDOWS_REMEDIATION_CREATE_OUTPUT=$(az policy remediation create \
+        --name "pqc-remediation-windows" \
+        --policy-assignment "pqc-validator-arc" \
+        --definition-reference-id "pqc-windows-arc-cse" \
+        --subscription "$SUBSCRIPTION" \
+        --resource-discovery-mode "$REMEDIATION_DISCOVERY_MODE" \
+        --output none 2>&1)
+    WINDOWS_REMEDIATION_CREATE_EXIT=$?
+    set -e
+
+    if [ $WINDOWS_REMEDIATION_CREATE_EXIT -ne 0 ]; then
+        if echo "$WINDOWS_REMEDIATION_CREATE_OUTPUT" | grep -q "InvalidUpdateRemediationRequest"; then
+            log "Windows remediation already active; skipping create"
+        else
+            echo "$WINDOWS_REMEDIATION_CREATE_OUTPUT"
+            exit $WINDOWS_REMEDIATION_CREATE_EXIT
+        fi
+    fi
+fi
 
 log ""
 log "============================================================"

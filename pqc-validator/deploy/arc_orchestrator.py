@@ -45,7 +45,7 @@ WINDOWS_VALIDATOR_PATH = "C:\\pqc-validator"
 
 
 def build_linux_script(dce_endpoint: str, dcr_immutable_id: str,
-                        stream_name: str = "PQCCompliance_CL") -> str:
+                        stream_name: str = "Custom-PQCCompliance_CL") -> str:
     """Shell script injected via Arc Run Command on Linux/macOS machines."""
     return f"""#!/bin/bash
 set -e
@@ -78,7 +78,7 @@ echo "PQC validation complete on $(hostname)"
 
 
 def build_windows_script(dce_endpoint: str, dcr_immutable_id: str,
-                          stream_name: str = "PQCCompliance_CL") -> str:
+                          stream_name: str = "Custom-PQCCompliance_CL") -> str:
     """PowerShell script injected via Arc Run Command on Windows machines."""
     return f"""
 $env:PQC_DCE_ENDPOINT = "{dce_endpoint}"
@@ -183,7 +183,7 @@ def run_fleet_validation(
     subscription_id: str,
     dce_endpoint: str,
     dcr_immutable_id: str,
-    stream_name: str = "PQCCompliance_CL",
+    stream_name: str = "Custom-PQCCompliance_CL",
     resource_group: Optional[str] = None,
     os_filter: Optional[str] = None,
     tag_filter: Optional[Dict[str, str]] = None,
@@ -276,7 +276,7 @@ def run_fleet_validation(
     print(f"  Succeeded: {success_count}")
     print(f"  Failed:    {fail_count}")
     print(f"\nResults are available in Log Analytics.")
-    print(f"Query with: PQCCompliance_CL | summarize count() by Status_s, MachineName_s")
+    print(f"Query with: PQCCompliance_CL | summarize count() by status_s, hostname_s")
     print(f"{'='*60}\n")
 
     return {
@@ -298,7 +298,7 @@ def main():
                         help="Data Collection Endpoint URL")
     parser.add_argument("--dcr-immutable-id", required=True,
                         help="DCR Immutable ID (dcr-xxxx...)")
-    parser.add_argument("--stream-name", default="PQCCompliance_CL",
+    parser.add_argument("--stream-name", default="Custom-PQCCompliance_CL",
                         help="Log Analytics custom stream name")
     parser.add_argument("--resource-group",
                         help="Scope to a specific resource group")

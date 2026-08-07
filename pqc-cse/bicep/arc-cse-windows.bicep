@@ -29,6 +29,17 @@ Stored in protectedSettings so the token is encrypted at rest and in transit.
 @secure()
 param packageUrl string
 
+@description('Expected SHA-256 for pqc-validator.zip')
+param packageSha256 string
+
+@description('SAS URL to detached signature for pqc-validator.zip')
+@secure()
+param packageSigUrl string
+
+@description('SAS URL to DER certificate containing signing public key')
+@secure()
+param packageCertUrl string
+
 @description('Daily run time HH:MM in UTC. The Windows Scheduled Task fires at this time.')
 param scheduleTime string = '03:00'
 
@@ -67,7 +78,7 @@ resource pqcCseWindows 'Microsoft.HybridCompute/machines/extensions@2024-05-20-p
       // after fileUris are downloaded to the CSE working directory.
       // -File with a bare filename fails because the CSE binary runs from the plugin dir, not the download dir.
       // Instead use -Command, set env vars, then locate install.ps1 dynamically under the plugin tree.
-      commandToExecute: 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "& { $env:PQC_DCE_ENDPOINT=\'${dceEndpoint}\'; $env:PQC_DCR_IMMUTABLE_ID=\'${dcrImmutableId}\'; $env:PQC_STREAM_NAME=\'${streamName}\'; $env:PQC_PACKAGE_URL=\'${packageUrl}\'; $env:PQC_SCHEDULE_TIME=\'${scheduleTime}\'; $f=(Get-ChildItem $env:SystemDrive\\Packages\\Plugins\\Microsoft.Compute.CustomScriptExtension -Recurse -Filter install.ps1 | Select-Object -First 1).FullName; if (!$f){throw \'install.ps1 not found\'}; & $f }"'
+      commandToExecute: 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "& { $env:PQC_DCE_ENDPOINT=\'${dceEndpoint}\'; $env:PQC_DCR_IMMUTABLE_ID=\'${dcrImmutableId}\'; $env:PQC_STREAM_NAME=\'${streamName}\'; $env:PQC_PACKAGE_URL=\'${packageUrl}\'; $env:PQC_PACKAGE_SHA256=\'${packageSha256}\'; $env:PQC_PACKAGE_SIG_URL=\'${packageSigUrl}\'; $env:PQC_PACKAGE_CERT_URL=\'${packageCertUrl}\'; $env:PQC_SCHEDULE_TIME=\'${scheduleTime}\'; $f=(Get-ChildItem $env:SystemDrive\\Packages\\Plugins\\Microsoft.Compute.CustomScriptExtension -Recurse -Filter install.ps1 | Select-Object -First 1).FullName; if (!$f){throw \'install.ps1 not found\'}; & $f }"'
     }
   }
 }

@@ -6,6 +6,8 @@ Captures all validation activities for audit trails and reporting.
 import logging
 import json
 import os
+import hashlib
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -41,6 +43,33 @@ class PQCLogger:
         # Structured log file for machine parsing
         self.scan_file = self.log_dir / "scans.jsonl"
         self.host_info = {}
+        self.scan_run_id = str(uuid.uuid4())
+
+    def _build_record_hash(self, normalized: Dict[str, Any]) -> str:
+        """
+        Build a deterministic hash for idempotent deduplication across reruns.
+        Excludes run-local and timestamp fields so identical findings hash the same.
+        """
+        stable_view = {
+            "record_type": normalized.get("record_type", ""),
+            "hostname": normalized.get("hostname", ""),
+            "platform": normalized.get("platform", ""),
+            "os_version": normalized.get("os_version", ""),
+            "check_name": normalized.get("check_name", ""),
+            "category": normalized.get("category", ""),
+            "status": normalized.get("status", ""),
+            "details": normalized.get("details", ""),
+            "algorithm": normalized.get("algorithm", ""),
+            "version": normalized.get("version", ""),
+            "gap_type": normalized.get("gap_type", ""),
+            "severity": normalized.get("severity", ""),
+            "affected_component": normalized.get("affected_component", ""),
+            "recommendation": normalized.get("recommendation", ""),
+            "priority_score": normalized.get("priority_score", 0.0),
+            "error_type": normalized.get("error_type", ""),
+        }
+        payload = json.dumps(stable_view, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
         
     def _setup_logger(self, name: str, filename: str) -> logging.Logger:
         """Create a configured logger instance."""
@@ -88,6 +117,7 @@ class PQCLogger:
         result    = record.get("result", {}) or {}
         host_info = record.get("host_info", {}) or {}
         effective_host = host_info or self.host_info
+        event_timestamp = record.get("timestamp") or datetime.now().isoformat()
 
         details = (
             record.get("details")
@@ -97,7 +127,12 @@ class PQCLogger:
             or ""
         )
 
-        return {
+        normalized = {
+            # Preserve machine-side event time for evidence-quality timelines.
+            "TimeGenerated":      event_timestamp,
+            "record_timestamp":   event_timestamp,
+            "scan_started_at":    effective_host.get("scan_timestamp", ""),
+            "scan_run_id":        self.scan_run_id,
             "record_type":        raw_type,
             "hostname":           effective_host.get("hostname", ""),
             "platform":           effective_host.get("platform", ""),
@@ -117,7 +152,12 @@ class PQCLogger:
             "priority_score":     float(record.get("priority_score", 0.0)),
             # Error fields
             "error_type":         record.get("error_type", ""),
+            # Full source record payload for audit/replay provenance.
+            "raw_record":         json.dumps(record, default=str),
         }
+
+        normalized["record_hash"] = self._build_record_hash(normalized)
+        return normalized
 
     def _emit(self, record: Dict[str, Any]) -> None:
         """Write one record to local JSONL and (optionally) to Azure Monitor."""
@@ -132,10 +172,11 @@ class PQCLogger:
             except Exception as exc:  # never let telemetry break the scan
                 self.error_logger.warning(f"Azure Monitor send failed: {exc}")
 
-    def flush_azure(self) -> None:
+    def flush_azure(self) -> bool:
         """Flush any buffered records to Azure Monitor."""
         if self._azure_sink:
-            self._azure_sink.flush()
+            return self._azure_sink.flush()
+        return True
 
     def set_host_info(self, hostname: str, platform: str, version: str):
         """Record host information for this validation session."""

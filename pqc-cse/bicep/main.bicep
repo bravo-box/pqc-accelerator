@@ -27,6 +27,20 @@ param windowsInstallScriptUrl string
 @secure()
 param packageUrl string
 
+@description('Expected SHA-256 digest of pqc-validator.zip')
+param packageSha256 string
+
+@description('SAS URL to detached signature for pqc-validator.zip')
+@secure()
+param packageSigUrl string
+
+@description('URL to PEM public key used to verify pqc-validator.zip')
+param packagePubkeyUrl string
+
+@description('SAS URL to DER certificate used for Windows signature verification')
+@secure()
+param packageCertUrl string
+
 @description('Daily run time HH:MM UTC')
 param scheduleTime string = '03:00'
 
@@ -48,6 +62,9 @@ module linuxCse 'arc-cse-linux.bicep' = [for machine in linuxMachines: {
     streamName:        streamName
     installScriptUrl:  linuxInstallScriptUrl
     packageUrl:        packageUrl
+    packageSha256:     packageSha256
+    packageSigUrl:     packageSigUrl
+    packagePubkeyUrl:  packagePubkeyUrl
     scheduleTime:      scheduleTime
   }
 }]
@@ -64,6 +81,9 @@ module windowsCse 'arc-cse-windows.bicep' = [for machine in windowsMachines: {
     streamName:        streamName
     installScriptUrl:  windowsInstallScriptUrl
     packageUrl:        packageUrl
+    packageSha256:     packageSha256
+    packageSigUrl:     packageSigUrl
+    packageCertUrl:    packageCertUrl
     scheduleTime:      scheduleTime
   }
 }]
