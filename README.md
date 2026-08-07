@@ -309,7 +309,7 @@ Operational notes for reviewers:
 1. Check logs of the CSE for any errors, log locations:
 
 - Windows
-  - CSE Log ```C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.22\status\0.status```
+  - CSE Log ```C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.22\status\x.status```
   - PQC Log ```C:\pqc-validator\logs```
 
 - Linux
