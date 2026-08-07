@@ -88,7 +88,7 @@ flowchart TB
   end
 
   A --> C
-  B --> C
+  B --> | Hash signing | C
   C --> D
 
   E --> F
@@ -101,7 +101,7 @@ flowchart TB
   
   K <--> M
   K <--> N
-  K <--> | Monitoring Metrics Publisher\nAzure Role Assignment | J
+  K <-.-> | Monitoring Metrics Publisher\nAzure Role Assignment | J
   L --> O
   O --> M
   O --> N
