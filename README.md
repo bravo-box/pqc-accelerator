@@ -139,7 +139,7 @@ Use this for development, testing, and peer review demonstrations.
 3. Review logs and reports.
 
 ```bash
-cd pqc_accelerator/pqc-validator
+cd pqc-accelerator/pqc-validator
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -158,12 +158,30 @@ Use this for portable fleet rollout.
 #### Step 1: Provision Azure monitoring infrastructure
 
 ```bash
-cd pqc_accelerator
+cd pqc-accelerator
 python3 pqc-validator/deploy/setup_azure.py \
   --subscription <subscription-id> \
   --resource-group <resource-group> \
   --location <azure-region> \
   --workspace-name <log-analytics-workspace-name>
+```
+
+Table plan notes:
+
+1. Default table plan is `Analytics`.
+2. On `Basic` and `Auxiliary`, table retention settings are immutable. The script ignores retention flags for those plans.
+3. Use `Basic` for lower-cost ingestion when the plan constraints are acceptable.
+4. You can explicitly force `Analytics` like this:
+
+```bash
+python3 pqc-validator/deploy/setup_azure.py \
+  --subscription <subscription-id> \
+  --resource-group <resource-group> \
+  --location <azure-region> \
+  --workspace-name <log-analytics-workspace-name> \
+  --table-plan Analytics \
+  --table-retention-days 30 \
+  --table-total-retention-days 365
 ```
 
 Expected output:
@@ -186,6 +204,8 @@ Expected output:
 
 - Uploads validator package and install scripts.
 - Generates pqc-cse/.env.cse with artifact URLs.
+
+NOTE: before deploy through Policy you should ensure that the Security Group or Arc-machines identities are given 'Monitoring Metrics Publisher' Role to the Data Collection Rule.
 
 #### Step 3: Deploy at scale with Azure Policy
 
