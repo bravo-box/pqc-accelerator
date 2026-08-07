@@ -17,4 +17,6 @@ pqc-validator/venv/
 
 __azurite_db_table__.json
 
+# All PEM files
 *.pem
+/pqc-cse/*.pem
