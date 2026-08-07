@@ -191,6 +191,13 @@ Expected output:
 
 #### Step 2: Package and publish CSE artifacts
 
+If you do not have a PEM key, you will need to create one.
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out pqc-signing-key.pem
+chmod 600 pqc-signing-key.pem
+```
+
 ```bash
 cd pqc_accelerator/pqc-cse
 chmod +x package-and-upload.sh
@@ -198,6 +205,7 @@ chmod +x package-and-upload.sh
   --storage-account <storage-account-name> \
   --resource-group <resource-group> \
   --subscription <subscription-id>
+  --signing-key <pem key>
 ```
 
 Expected output:
