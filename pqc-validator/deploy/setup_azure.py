@@ -150,6 +150,8 @@ def ensure_custom_table_schema(
     Existing columns are preserved.
     """
     table_name = "PQCCompliance_CL"
+    desired_plan_lower = str(table_plan).lower()
+    retention_mutable = desired_plan_lower == "analytics"
     print(f"  Ensuring custom table '{table_name}' schema...")
 
     desired_columns = list(PQC_COLUMNS)
@@ -180,9 +182,10 @@ def ensure_custom_table_schema(
             "--name", table_name,
             "--columns",
             *column_args,
-            "--retention-time", str(table_retention_days),
             "--plan", table_plan,
         ]
+        if retention_mutable:
+            create_cmd.extend(["--retention-time", str(table_retention_days)])
         create_result = subprocess.run(
             create_cmd,
             capture_output=True,
@@ -219,11 +222,13 @@ def ensure_custom_table_schema(
         properties.get("totalRetentionInDays", table.get("totalRetentionInDays", table_total_retention_days))
         or table_total_retention_days
     )
-    plan_or_retention_changed = (
-        current_plan != table_plan
-        or current_retention != table_retention_days
+    plan_changed = current_plan.lower() != str(table_plan).lower()
+    retention_changed = (
+        current_retention != table_retention_days
         or current_total_retention != table_total_retention_days
     )
+    # Basic/Auxiliary plans do not support mutable table retention settings.
+    plan_or_retention_changed = plan_changed or (retention_mutable and retention_changed)
 
     if not missing_columns and not conflicting_columns and not plan_or_retention_changed:
         print(f"  ✓ Custom table '{table_name}' already matches required schema")
@@ -269,6 +274,10 @@ def ensure_custom_table_schema(
             f"retention {current_retention}->{table_retention_days}, "
             f"totalRetention {current_total_retention}->{table_total_retention_days}"
         )
+    elif not retention_mutable and retention_changed:
+        print(
+            "  ℹ  Table plan is Basic/Auxiliary; retention arguments are ignored for this plan."
+        )
 
     if not missing_columns and not plan_or_retention_changed:
         return True
@@ -280,10 +289,14 @@ def ensure_custom_table_schema(
         "--workspace-name", workspace_name,
         "--name", table_name,
         "--plan", table_plan,
-        "--retention-time", str(table_retention_days),
-        "--total-retention-time", str(table_total_retention_days),
         "-o", "none",
     ]
+
+    if retention_mutable:
+        update_cmd.extend([
+            "--retention-time", str(table_retention_days),
+            "--total-retention-time", str(table_total_retention_days),
+        ])
 
     if missing_columns:
         update_cmd.extend(["--columns", *column_args])
@@ -418,9 +431,9 @@ def main():
     )
     parser.add_argument(
         "--table-plan",
-        default="Basic",
+        default="Analytics",
         choices=["Analytics", "Basic", "Auxiliary"],
-        help="Log Analytics table plan for PQCCompliance_CL (default: Basic)"
+        help="Log Analytics table plan for PQCCompliance_CL (default: Analytics)"
     )
     parser.add_argument(
         "--table-retention-days",

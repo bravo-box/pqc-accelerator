@@ -41,11 +41,22 @@ fi
 log() { echo "[$(date -u '+%H:%M:%S')] $*"; }
 
 # ── Load environment files ────────────────────────────────────────────────────
-ENV_PQC="$SCRIPT_DIR/../.env.pqc"
-if [ ! -f "$ENV_PQC" ] && [ -f "$SCRIPT_DIR/../pqc-validator/deploy/.env.pqc" ]; then
-    ENV_PQC="$SCRIPT_DIR/../pqc-validator/deploy/.env.pqc"
-fi
+# Resolve the most recent .env.pqc from common setup locations to avoid using stale endpoints.
 ENV_CSE="$SCRIPT_DIR/.env.cse"
+ENV_PQC=""
+PQC_CANDIDATES=(
+    "$SCRIPT_DIR/../.env.pqc"
+    "$SCRIPT_DIR/../pqc-validator/.env.pqc"
+    "$SCRIPT_DIR/../pqc-validator/deploy/.env.pqc"
+)
+
+for candidate in "${PQC_CANDIDATES[@]}"; do
+    if [ -f "$candidate" ]; then
+        if [ -z "$ENV_PQC" ] || [ "$candidate" -nt "$ENV_PQC" ]; then
+            ENV_PQC="$candidate"
+        fi
+    fi
+done
 
 for f in "$ENV_PQC" "$ENV_CSE"; do
     if [ ! -f "$f" ]; then
@@ -54,6 +65,9 @@ for f in "$ENV_PQC" "$ENV_CSE"; do
         exit 1
     fi
 done
+
+log "Using PQC env file: $ENV_PQC"
+log "Using CSE env file: $ENV_CSE"
 
 # shellcheck source=/dev/null
 source "$ENV_PQC"

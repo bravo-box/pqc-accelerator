@@ -16,3 +16,7 @@ pqc-validator/venv/
 .DS_Store
 
 __azurite_db_table__.json
+
+# All PEM files
+*.pem
+/pqc-cse/*.pem
