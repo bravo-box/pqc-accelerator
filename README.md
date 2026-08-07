@@ -88,7 +88,7 @@ flowchart TB
   end
 
   A --> C
-  B --> C
+  B --> | Hash signing | C
   C --> D
 
   E --> F
@@ -101,7 +101,7 @@ flowchart TB
   
   K <--> M
   K <--> N
-  K <--> | Monitoring Metrics Publisher\nAzure Role Assignment | J
+  K <-.-> | Monitoring Metrics Publisher\nAzure Role Assignment | J
   L --> O
   O --> M
   O --> N
@@ -309,7 +309,7 @@ Operational notes for reviewers:
 1. Check logs of the CSE for any errors, log locations:
 
 - Windows
-  - CSE Log ```C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.22\status\0.status```
+  - CSE Log ```C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.22\status\x.status```
   - PQC Log ```C:\pqc-validator\logs```
 
 - Linux
