@@ -158,8 +158,7 @@ fi
 # Ubuntu 22.04 -> 3.10, Ubuntu 24.04 -> 3.12), and C-extension packages like
 # cffi/cryptography publish version-specific (non-abi3) wheels. Building for a
 # single hardcoded version left other interpreters with no installable wheel.
-PY_VERSIONS=(3.9 3.12)
-
+PY_VERSIONS=(3.9 3.10 3.12)
 build_wheelhouse() {
     local platform_tag="$1"
     local wheel_dir="$2"
