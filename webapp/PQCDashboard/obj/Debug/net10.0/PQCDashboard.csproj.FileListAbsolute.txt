@@ -85,3 +85,4 @@
 /Users/waynemeyer/Documents/github/pqc-accelerator/webapp/PQCDashboard/obj/Debug/net10.0/PQCDashboard.pdb
 /Users/waynemeyer/Documents/github/pqc-accelerator/webapp/PQCDashboard/obj/Debug/net10.0/PQCDashboard.genruntimeconfig.cache
 /Users/waynemeyer/Documents/github/pqc-accelerator/webapp/PQCDashboard/obj/Debug/net10.0/ref/PQCDashboard.dll
+/Users/waynemeyer/Documents/github/pqc-accelerator/webapp/PQCDashboard/obj/Debug/net10.0/PQCDashboard.sourcelink.json

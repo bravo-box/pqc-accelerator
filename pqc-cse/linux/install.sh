@@ -47,7 +47,7 @@ log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
 log "=========================================================="
 log "PQC Validator CSE Install starting"
-log "Version      : 3.1.1"
+log "Version      : 3.1.2"
 log "=========================================================="
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
