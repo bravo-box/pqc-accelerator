@@ -287,9 +287,8 @@ if ($ExistingRoleAssignmentId) {
 # ── Create remediation tasks for existing machines ────────────────────────────
 # For initiative (policy set) assignments, a separate remediation task is required
 # for each member policy definition, identified by --definition-reference-id.
-# --policy-assignment takes the assignment NAME (not resource ID).
-# --scope must match the assignment scope.
-function New-PqcRemediation {
+# --policy-assignment accepts either the assignment name or the full resource ID.
+# Scope arguments must match the assignment scope.
     param(
         [string]$Name,
         [string]$DefinitionReferenceId,
