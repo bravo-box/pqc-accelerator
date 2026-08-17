@@ -299,8 +299,8 @@ if ($ExistingRoleAssignmentId) {
     $scopeArgs = @()
     if ($ManagementGroup) {
         $scopeArgs = @('--management-group', $ManagementGroup)
-    } elseif ($ResourceGroup) {
-        $scopeArgs = @('--resource-group', $ResourceGroup)
+    } elseif ($ScopeRg) {
+        $scopeArgs = @('--resource-group', $ScopeRg)
     } else {
         $scopeArgs = @('--subscription', $Subscription)
     }
