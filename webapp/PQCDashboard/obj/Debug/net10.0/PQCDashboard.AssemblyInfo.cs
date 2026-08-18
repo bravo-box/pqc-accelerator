@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PQCDashboard")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8daf3a6d5a3bdeee1d9e06034830570405b028fd")]
 [assembly: System.Reflection.AssemblyProductAttribute("PQCDashboard")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PQCDashboard")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

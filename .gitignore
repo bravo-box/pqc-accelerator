@@ -15,6 +15,9 @@ pqc-validator/venv/
 *.bak
 .DS_Store
 
+# .NET build outputs
+webapp/**/obj/
+
 __azurite_db_table__.json
 AzuriteConfig
 

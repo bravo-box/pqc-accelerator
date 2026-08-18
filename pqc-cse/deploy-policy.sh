@@ -226,7 +226,7 @@ ASSIGNMENT_JSON=$(az policy assignment create \
             \"packagePubkeyUrl\":        {\"value\": \"$PQC_PACKAGE_PUBKEY_URL\"},
             \"packageCertUrl\":          {\"value\": \"$PQC_PACKAGE_CERT_URL\"},
             \"scheduleTime\":            {\"value\": \"03:00\"},
-            \"forceUpdateTag\":          {\"value\": \"v4\"},
+            \"forceUpdateTag\":          {\"value\": \"v6\"},
             \"linuxEffect\":             {\"value\": \"DeployIfNotExists\"},
             \"windowsEffect\":           {\"value\": \"DeployIfNotExists\"}
         }" \
@@ -261,12 +261,19 @@ fi
 # ── Create remediation tasks for existing machines ────────────────────────────
 # For initiative (policy set) assignments, a separate remediation task is required
 # for each member policy definition, identified by --definition-reference-id.
-# --policy-assignment takes the assignment NAME (not resource ID).
-# --scope must match the assignment scope.
+# Use the assignment scope arguments supported by az policy remediation, not --scope.
+if [ -n "$MGMT_GROUP" ]; then
+    REMEDIATION_SCOPE_ARGS=(--management-group "$MGMT_GROUP")
+elif [ -n "$SCOPE_RG" ]; then
+    REMEDIATION_SCOPE_ARGS=(--resource-group "$SCOPE_RG")
+else
+    REMEDIATION_SCOPE_ARGS=(--subscription "$SUBSCRIPTION")
+fi
+
 log "--- Creating remediation task for Linux Arc machines..."
 LINUX_REMEDIATION_STATE=$(az policy remediation show \
     --name "pqc-remediation-linux" \
-    --management-group "$MGMT_GROUP" \
+    "${REMEDIATION_SCOPE_ARGS[@]}" \
     --query "properties.provisioningState" \
     --output tsv 2>/dev/null || true)
 
@@ -276,9 +283,9 @@ else
     set +e
     LINUX_REMEDIATION_CREATE_OUTPUT=$(az policy remediation create \
         --name "pqc-remediation-linux" \
-        --policy-assignment "pqc-validator-arc" \
+        --policy-assignment "$ASSIGNMENT_ID" \
         --definition-reference-id "pqc-linux-arc-cse" \
-        --subscription "$SUBSCRIPTION" \
+        "${REMEDIATION_SCOPE_ARGS[@]}" \
         --resource-discovery-mode "$REMEDIATION_DISCOVERY_MODE" \
         --output none 2>&1)
     LINUX_REMEDIATION_CREATE_EXIT=$?
@@ -297,7 +304,7 @@ fi
 log "--- Creating remediation task for Windows Arc machines..."
 WINDOWS_REMEDIATION_STATE=$(az policy remediation show \
     --name "pqc-remediation-windows" \
-    --management-group "$MGMT_GROUP" \
+    "${REMEDIATION_SCOPE_ARGS[@]}" \
     --query "properties.provisioningState" \
     --output tsv 2>/dev/null || true)
 
@@ -307,9 +314,9 @@ else
     set +e
     WINDOWS_REMEDIATION_CREATE_OUTPUT=$(az policy remediation create \
         --name "pqc-remediation-windows" \
-        --policy-assignment "pqc-validator-arc" \
+        --policy-assignment "$ASSIGNMENT_ID" \
         --definition-reference-id "pqc-windows-arc-cse" \
-        --subscription "$SUBSCRIPTION" \
+        "${REMEDIATION_SCOPE_ARGS[@]}" \
         --resource-discovery-mode "$REMEDIATION_DISCOVERY_MODE" \
         --output none 2>&1)
     WINDOWS_REMEDIATION_CREATE_EXIT=$?
