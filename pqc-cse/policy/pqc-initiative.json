@@ -108,6 +108,7 @@
           "packageSigUrl":    { "value": "[parameters('packageSigUrl')]" },
           "packagePubkeyUrl": { "value": "[parameters('packagePubkeyUrl')]" },
           "scheduleTime":     { "value": "[parameters('scheduleTime')]" },
+          "forceUpdateTag":   { "value": "[parameters('forceUpdateTag')]" },
           "effect":           { "value": "[parameters('linuxEffect')]" }
         }
       },
